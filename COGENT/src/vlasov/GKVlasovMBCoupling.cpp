@@ -11,7 +11,7 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
                                         int               a_order )
    : m_geometry(a_geometry)
 {
-#if CFG_DIM==3
+   
    const CFG::MagGeom& mag_geom = a_geometry.magGeom();
    const RefCountedPtr<CFG::MagCoordSys> mag_coord_sys_ptr = mag_geom.getCoordSys();
 
@@ -73,11 +73,14 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
       }
    }
 
+#if CFG_DIM == 3
    const LevelData<FArrayBox>& remapped_index = a_geometry.getShearedRemappedIndex();
    const LevelData<FArrayBox>& interp_stencil = a_geometry.getShearedInterpStencil();
    const LevelData<FArrayBox>& sheared_interp_stencil_offsets = a_geometry.getShearedInterpStencilOffsets();
 
    int order = mag_geom.shearedInterpOrder();
+#endif
+   
    int num_blocks = mag_coord_sys_ptr->numBlocks();
 
    for (DataIterator dit(grids); dit.ok(); ++dit) {
@@ -85,10 +88,13 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
       const int block_num = coord_sys->whichBlock(box);
       const ProblemDomain& domain = a_geometry.getBlockCoordSys(box).domain();
       const Box& domain_box = domain.domainBox();
-      const FArrayBox& this_remapped_index = remapped_index[dit];
-      const FArrayBox& this_interp_stencil = interp_stencil[dit];
       const IntVectSet& ghost_cells = m_ghostCells[dit];
       IVSFAB<MBStencil>& this_stencil_fab = *m_stencils[dit];
+
+#if CFG_DIM == 3
+      const FArrayBox& this_remapped_index = remapped_index[dit];
+      const FArrayBox& this_interp_stencil = interp_stencil[dit];
+#endif
       
       for (IVSIterator iv_it(ghost_cells); iv_it.ok(); ++iv_it) {
          IntVect iv = iv_it();
@@ -102,6 +108,8 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
          RefCountedPtr<Vector<MBStencilElement> > stencil_vect_ptr 
             = RefCountedPtr<Vector<MBStencilElement> >(new Vector<MBStencilElement>);
 
+#if CFG_DIM == 3
+         // Handle coupling at toroidal block boundaries for a 3D sheared MB geometry
          bool iv_on_lo_toroidal_bndry = iv[TOROIDAL_DIR] < domain_box.smallEnd(TOROIDAL_DIR);
          bool iv_on_hi_toroidal_bndry = iv[TOROIDAL_DIR] > domain_box.bigEnd(TOROIDAL_DIR);
 
@@ -181,10 +189,21 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
                MayDay::Error("GKVlasovMBCoupling::GKVlasovMBCoupling(): unknown geometry type");
             }
          }
-         else if ( mag_coord_sys_ptr->type() == "LogicallyRectangular" 
+#endif
+
+#if CFG_DIM == 3
+         // Handle coupling at poloidal block boundaries for a 3D sheared MB geometry
+         // only go here if we are not at the toroidal boundaries (therefore else if)
+         else if ( mag_coord_sys_ptr->type() == "LogicallyRectangular"
                    && (iv[POLOIDAL_DIR] < domain_box.smallEnd(POLOIDAL_DIR) ||
                        iv[POLOIDAL_DIR] > domain_box.bigEnd(POLOIDAL_DIR)) ) {
 
+#else
+         // Handle coupling at poloidal block boundaries for a 2D MB geometry
+         if ( mag_coord_sys_ptr->type() == "LogicallyRectangular"
+                  && (iv[POLOIDAL_DIR] < domain_box.smallEnd(POLOIDAL_DIR) ||
+                      iv[POLOIDAL_DIR] > domain_box.bigEnd(POLOIDAL_DIR)) ) {
+#endif
             iv_remapped_center = iv;
             if (iv[POLOIDAL_DIR] < domain_box.smallEnd(POLOIDAL_DIR)) {
                iv_remapped_center[POLOIDAL_DIR] += domain_box.size(POLOIDAL_DIR);
@@ -211,10 +230,6 @@ GKVlasovMBCoupling::GKVlasovMBCoupling( const PhaseGeom&  a_geometry,
          this_stencil_fab(iv,0) = MBStencil(stencil_vect_ptr);
       }
    }
-
-#else
-   MayDay::Error("Attempted to construct a GKVlasovMBCoupling object when not 3D");
-#endif
 }
 
 

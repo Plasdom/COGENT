@@ -17,13 +17,16 @@ ConsDragDiff::ConsDragDiff( const string& a_species_name, const string& a_ppcls_
     : m_cls_only(false),
       moment_op( MomentOp::instance() ),
       m_first_call(true),
+      m_first_PC_assemble(true),
       m_it_counter(0),
       m_update_cls_freq(1),
       m_update_operator_coeff(1),
+      m_update_PC_freq(1),
       m_nbands(5),
       m_my_pc_idx(-1),
       m_skip_stage_update(false),
       m_time_implicit(true),
+      m_second_order(false),
       m_diagnostics(false),
       m_verbosity(a_verbosity),
       m_cls_freq_func(NULL)
@@ -125,7 +128,7 @@ void ConsDragDiff::evalClsRHS( KineticSpeciesPtrVect&        a_rhs,
                                 CHF_CONST_FRA1(this_Temp,0),
                                 CHF_CONST_FRA(this_Jpsi) );
   }
-
+  
   // add (or overwrite) collision RHS to Vlasov RHS
   for (cdit.begin(); cdit.ok(); ++cdit)
   {
@@ -197,6 +200,11 @@ void ConsDragDiff::computeVelFluxesDiv(LevelData<FArrayBox>&        a_Jpsi,
         
     for (int dir=0; dir<SpaceDim; dir++)
     {
+      // we can use second_order = true to have consistency between
+      // the PC and the collisional operator
+       
+      int is_second_order = (m_second_order) ? 1 : 0;
+
       FORT_EVAL_CONSDRAGDIFF_FLUX(CHF_BOX(m_fluxes[dit][dir].box()),
                                   CHF_FRA(m_fluxes[dit][dir]),
                                   CHF_CONST_FRA1(fBJ_on_patch,0),
@@ -207,6 +215,7 @@ void ConsDragDiff::computeVelFluxesDiv(LevelData<FArrayBox>&        a_Jpsi,
                                   CHF_CONST_INT(dir),
                                   CHF_CONST_INT(num_vp_cells),
                                   CHF_CONST_INT(num_mu_cells),
+                                  CHF_CONST_INT(is_second_order),
                                   CHF_CONST_INT(use_spatial_vel_norm));
 
     }
@@ -428,7 +437,7 @@ void ConsDragDiff::updateBlockPC( std::vector<Preconditioner<ODEVector,AppCtxt>*
                                   const bool                                        a_im,
                                   const int                                         a_species_index )
 {
-  if (a_im && m_time_implicit) {
+  if (a_im && m_time_implicit && (m_it_counter % m_update_PC_freq == 0 || m_first_PC_assemble)) {
     CH_assert(m_my_pc_idx >= 0);
     CH_assert(a_pc.size() > m_my_pc_idx);
 
@@ -451,6 +460,8 @@ void ConsDragDiff::updateBlockPC( std::vector<Preconditioner<ODEVector,AppCtxt>*
                             a_stage,
                             a_shift);
     pc_mat.finalAssembly();
+    
+    m_first_PC_assemble = false;
   }
   return;
 }
@@ -471,8 +482,14 @@ void ConsDragDiff::assemblePrecondMatrix( BandedMatrix&                   a_P,
     const int                   n_comp      (soln_dfn.nComp());
     const VEL::VelCoordSys&     vel_coords  (phase_geom.velSpaceCoordSys());
     const VEL::RealVect&        vel_dx      (vel_coords.dx());
+    const VEL::ProblemDomain&   vel_domain  = vel_coords.domain();
+    const VEL::Box&             domain_box  = vel_domain.domainBox();
     const double                mass        (a_species.mass());
+    const double                charge      (a_species.charge());
     const LevelData<FArrayBox>& pMapping    (a_global_dofs.data());
+    
+    const int nvpar = domain_box.size(0);
+    const int nmu   = domain_box.size(1);
     
     Real  dv = 1.0/vel_dx[0], dmu = 1.0/vel_dx[1], dv_sq = dv*dv, dmu_sq = dmu*dmu;
 
@@ -514,7 +531,7 @@ void ConsDragDiff::assemblePrecondMatrix( BandedMatrix&                   a_P,
         iv_inj[MU_DIR] = mu_inj;
         
         /* collision frequency */
-        Real nu = m_cls_freq[dit](iv_inj);
+        Real nu = m_cls_freq[dit](ic);
         //Real spatial_vel_norm = inj_vel_norm[dit](iv_inj);
         
         Real DvL, DvR, DmuL, DmuR, DvvL, DvvR, DmumuL, DmumuR;
@@ -541,7 +558,7 @@ void ConsDragDiff::assemblePrecondMatrix( BandedMatrix&                   a_P,
         Real Bmag = inj_B[dit](iv_inj);
         DmumuL = 4.0 * nu * muL * temperature / Bmag;
         DmumuR = 4.0 * nu * muR * temperature / Bmag;
-  
+        
         for (int n(0); n < n_comp; n++) {
           /* global row/column numbers */
           int pc, pe, pw, pn, ps, pne, pnw, pse, psw;//, pee, pww, pnn, pss;
@@ -564,21 +581,47 @@ void ConsDragDiff::assemblePrecondMatrix( BandedMatrix&                   a_P,
           aw -= 0.5 * DvL * dv;
           ac += 0.5 * (-DvL + DvR) * dv;
           
+          /* Zero flux (fbc=0) BC correction*/
+          if (ic[VPARALLEL_DIR] == nvpar/2-1) {
+            ac -= 0.5 * DvR * dv;
+          }
+          if (ic[VPARALLEL_DIR] == -nvpar/2) {
+            ac += 0.5 * DvL * dv;
+          }
+          
           /* Advection terms along mu */
           an += 0.5 * DmuR * dmu;
           as -= 0.5 * DmuL * dmu;
           ac += 0.5 * (-DmuL + DmuR) * dmu;
+          
+          /* Zero flux (fbc=0) BC correction*/
+          if (ic[MU_DIR] == nmu-1) {
+            ac -= 0.5 * DmuR * dmu;
+          }
 
           /* Laplacian term along vpar */
           ae += DvvR * dv_sq;
           aw += DvvL * dv_sq;
           ac -= (DvvR + DvvL) * dv_sq;
 
+          /* Zero flux (df/dfvpar=0) BC correction*/
+          if (ic[VPARALLEL_DIR] == nvpar/2-1) {
+            ac += DvvR * dv_sq;
+          }
+          if (ic[VPARALLEL_DIR] == -nvpar/2) {
+            ac += DvvL * dv_sq;
+          }
+
           /* Laplacian term along mu */
           an += DmumuR * dmu_sq;
           as += DmumuL * dmu_sq;
           ac -= (DmumuR + DmumuL) * dmu_sq;
-
+          
+          /* Zero flux (df/dfmu=0) BC correction*/
+          if (ic[MU_DIR] == nmu-1) {
+            ac += DmumuR * dmu_sq;
+          }
+                    
           int  ncols = m_nbands, ix = 0;
           int  *icols = (int*)  calloc (ncols,sizeof(int));
           Real *data  = (Real*) calloc (ncols,sizeof(Real));
@@ -628,8 +671,10 @@ void ConsDragDiff::assemblePrecondMatrix( BandedMatrix&                   a_P,
 void ConsDragDiff::ParseParameters(const ParmParse& a_pp) {
 
   a_pp.query("cls_only",m_cls_only);
-  a_pp.query("verbosity",m_verbosity);
   a_pp.query("time_implicit", m_time_implicit);
+  a_pp.query("second_order", m_second_order);
+
+  a_pp.query("verbosity",m_verbosity);
   CH_assert( m_verbosity == 0 || m_verbosity == 1);
   
   CFG::GridFunctionLibrary* grid_library = CFG::GridFunctionLibrary::getInstance();
@@ -643,7 +688,8 @@ void ConsDragDiff::ParseParameters(const ParmParse& a_pp) {
   a_pp.query("update_cls_freq", m_update_cls_freq );
   a_pp.query("update_operator_coeff", m_update_operator_coeff );
   a_pp.query("skip_stage_update", m_skip_stage_update );
-  
+  a_pp.query("update_PC", m_update_PC_freq );
+    
 }
 
 inline void ConsDragDiff::printParameters(const KineticSpeciesPtrVect&  a_soln_mapped,

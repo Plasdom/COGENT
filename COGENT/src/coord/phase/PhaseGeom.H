@@ -632,12 +632,14 @@ public:
 
    void plotConfigurationData(const string                          file_name,
                               const CFG::LevelData<CFG::FArrayBox>& data,
-                              const double&                         time) const;
+                              const double&                         time,//) const; VG
+			      bool                                  a_plot_mapping=true) const;
 
    void plotConfigurationData(const string                        file_name,
                               const CFG::LevelData<CFG::FluxBox>& data,
-                              const double&                       time) const;
-
+                              const double&                       time,//) const; VG
+			      bool                                a_plot_mapping=true) const;
+  
    void plotVelocityData(const string                          file_name,
                          const VEL::LevelData<VEL::FArrayBox>& data,
                          const double&                         time) const;
@@ -660,7 +662,8 @@ public:
 
    void plotData( const string&               file_name,
                   const LevelData<FArrayBox>& data,
-                  const double&               time) const;
+                  const double&               time, // VG    
+                  bool                        a_plot_mapping=true) const;
 
    CFG::Box configurationDomainBox(const CFG::DisjointBoxLayout& grids) const;
 

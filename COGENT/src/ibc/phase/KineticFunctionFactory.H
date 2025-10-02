@@ -10,6 +10,7 @@
 #include "ConstantKineticFunction.H"
 #include "LocalizedKineticFunction.H"
 #include "MaxwellianKineticFunction.H"
+#include "MaxwellianKineticFunctionRL.H"
 #include "CanonicalMaxwellianKineticFunction.H"
 #include "TensorProductSineKineticFunction.H"
 #include "ArbitraryKineticFunction.H"
@@ -74,6 +75,12 @@ RefCountedPtr<KineticFunction> KineticFunctionFactory::create(
       result = RefCountedPtr<KineticFunction>(
          new MaxwellianKineticFunction( a_pp, a_verbosity ) );
    }
+   // VG begin                                             
+   else if (model == "maxwellian_rl") {
+      result = RefCountedPtr<KineticFunction>(
+         new MaxwellianKineticFunctionRL( a_pp, a_verbosity ) );
+   }
+   // VG end
    else if (model == "canonical_maxwellian") {
       result = RefCountedPtr<KineticFunction>(
          new CanonicalMaxwellianKineticFunction( a_pp, a_verbosity ) );

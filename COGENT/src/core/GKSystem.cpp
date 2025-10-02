@@ -1909,7 +1909,7 @@ void GKSystem::setParameters( const GKSystemParameters& a_params )
      for (int i=0;i<2; ++i)
      {
        CH_assert( m_fixed_plotindices[i] >= 0 );
-       CH_assert( m_fixed_plotindices[i] < m_num_cells[i] );
+       // VG remove to run 1d: CH_assert( m_fixed_plotindices[i] < m_num_cells[i] );
      }
 #if CFG_DIM == 3
      CH_assert( m_fixed_plotindices[2] >= 0 );

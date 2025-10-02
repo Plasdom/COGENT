@@ -69,15 +69,18 @@ private:
 
    bool m_include_chx, m_chx_model_friction, m_first_call;
    bool m_SI_input, m_fixed_source_dfn;
+   bool m_compute_sigmaV;
+   bool m_diagnostics;
 
    double m_ionization_norm;
    double m_chx_norm;
 
-   RefCountedPtr<KineticFunction>   m_neutr_func;   
+   RefCountedPtr<KineticFunction>   m_ref_func;
    RefCountedPtr<CFG::GridFunction> m_neutr_dens;
    RefCountedPtr<CFG::GridFunction> m_neutr_vel;
    RefCountedPtr<CFG::GridFunction> m_neutr_temp;
    RefCountedPtr<CFG::GridFunction> m_ioniz_rate;
+   RefCountedPtr<CFG::GridFunction> m_electron_temp;
 
    CFG::LevelData<CFG::FArrayBox> m_neutral_density_cfg;
    CFG::LevelData<CFG::FArrayBox> m_neutral_velocity_cfg;
@@ -86,6 +89,8 @@ private:
    LevelData<FArrayBox> m_ionization_rate;
    LevelData<FArrayBox> m_neutral_density;
    LevelData<FArrayBox> m_neutral_dfn;
+   LevelData<FArrayBox> m_ref_dfn;
+   LevelData<FArrayBox> m_ionization_sigmaV;
 
    bool m_first_call_tscale;
    
@@ -125,7 +130,10 @@ private:
                                       const double                mass,
                                       const PhaseGeom&            phase_geom) const;
 
-   
+   /// Computes normalized (i.e., in COGENT units) ionization rate <sigma*v>
+   void computeIonizationSigmaV(CFG::LevelData<CFG::FArrayBox>&   ionization_sigmaV,
+                                CFG::LevelData<CFG::FArrayBox>&   Te_cfg,
+                                const Real                        time) const;
    
    /// Computes normalizations to handle the case of SI_input data
    void computeChxNormalization(double&       ioniz_norm,

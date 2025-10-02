@@ -47,10 +47,10 @@ class GridFunction
        * @param[in] as_cell_name Boolean switch for cell average values or
        *                         point values.
        */
-      void assign(LevelData<FArrayBox>& data,
-                  const MultiBlockLevelGeom& geometry,
-                  const Real& time,
-                  const bool& as_cell_averages = true ) const;
+      virtual void assign(LevelData<FArrayBox>& data,
+                          const MultiBlockLevelGeom& geometry,
+                          const Real& time,
+                          const bool& as_cell_averages = true ) const;
 
       void assign(LevelData<FluxBox>& data,
                   const MultiBlockLevelGeom& geometry,

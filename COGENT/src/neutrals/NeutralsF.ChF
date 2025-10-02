@@ -34,6 +34,46 @@ c     local variables
 
       end
 
+      subroutine compute_ionization_energy_loss(
+     &     CHF_BOX[box],
+     &     CHF_FRA1[rhs],
+     &     CHF_CONST_FRA1[fM],
+     &     CHF_CONST_FRA1[fe],
+     &     CHF_CONST_FRA1[nn],
+     &     CHF_CONST_FRA1[sigmaV],
+     &     )
+
+c     local variables
+      integer CHF_DDECL[i;j;k;l;m]
+
+      CHF_MULTIDO[box;i;j;k;l;m]
+
+#if CH_SPACEDIM==4
+
+!        rhs(CHF_IX[i;j;k;l]) = sigmaV(i,j,CHF_LBOUND[sigmaV;2],CHF_LBOUND[sigmaV;3])
+!      &                      * nn(i,j,CHF_LBOUND[nn;2],CHF_LBOUND[nn;3]) 
+!      &                      * (2 * fM(CHF_IX[i;j;k;l]) - fe(CHF_IX[i;j;k;l]))
+       rhs(CHF_IX[i;j;k;l]) = sigmaV(i,j,CHF_LBOUND[sigmaV;2],CHF_LBOUND[sigmaV;3])
+     &                      * nn(i,j,CHF_LBOUND[nn;2],CHF_LBOUND[nn;3]) 
+     &                      * fM(CHF_IX[i;j;k;l])
+
+#else
+
+!        rhs(CHF_IX[i;j;k;l;m]) = sigmaV(i,j,k,CHF_LBOUND[sigmaV;3],CHF_LBOUND[sigmaV;4])
+!      &                      * nn(i,j,k,CHF_LBOUND[nn;3],CHF_LBOUND[nn;4]) 
+!      &                      * (2 * fM(CHF_IX[i;j;k;l;m]) - fe(CHF_IX[i;j;k;l;m]))
+       rhs(CHF_IX[i;j;k;l;m]) = sigmaV(i,j,k,CHF_LBOUND[sigmaV;3],CHF_LBOUND[sigmaV;4])
+     &                      * nn(i,j,k,CHF_LBOUND[nn;3],CHF_LBOUND[nn;4]) 
+     &                      * fM(CHF_IX[i;j;k;l;m])
+
+#endif
+     
+      CHF_ENDDO
+
+      return
+
+      end
+
       subroutine compute_charge_exchange(
      &     CHF_BOX[box],
      &     CHF_FRA1[rhs],

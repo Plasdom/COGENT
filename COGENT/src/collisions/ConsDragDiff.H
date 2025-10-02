@@ -190,12 +190,15 @@ private:
 
   bool m_cls_only;
   bool m_first_call;
+  bool m_first_PC_assemble;
   bool m_skip_stage_update;
   int m_it_counter;
   int m_update_cls_freq;
   int m_update_operator_coeff;
+  int m_update_PC_freq;
   bool m_time_implicit;
   bool m_diagnostics;
+  bool m_second_order;
 
   int m_verbosity;
   ParmParse m_ppcls;

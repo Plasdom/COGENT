@@ -50,6 +50,8 @@ void GKDiagnostics::getCfgVar( CFG::LevelData<CFG::FArrayBox>&  a_var,
     getPerpPressure( a_var, a_species );
   } else if (a_var_name == "radialForceBalance") {
     getRadialForceBalance( a_var, a_species );
+  } else if (a_var_name == "parallelForceBalance") {
+    getParallelForceBalance( a_var, a_species );
   } else if (a_var_name == "temperature") {
     getTemperature( a_var, a_species );
   } else if (a_var_name == "parallelTemperature") {
@@ -674,6 +676,175 @@ void GKDiagnostics::getRadialForceBalance(CFG::LevelData<CFG::FArrayBox>& a_var,
       double force_balance = a_var[dit](iv,0)+a_var[dit](iv,1)+a_var[dit](iv,2)+E_r[dit](iv,0);
       a_var[dit](iv,3) = force_balance;
     }
+  }
+
+  return;
+}
+
+
+void GKDiagnostics::getParallelForceBalance(CFG::LevelData<CFG::FArrayBox>& a_var,
+                                            const KineticSpecies& a_soln_species ) const
+{
+  /*
+   First component = - grad(P_par)
+   Second component = q * E_par * n
+   Third component = d(m*n*Vpar)/dt for full Vlasov RHS
+   Fourth component = d(m*n*Vpar)/dt for Vlasov RHS without drift contributions
+                      (i.e., with zero larmor number). Should be close (up to truncation errors)
+                       to the sum of the first and second components
+   */
+  
+  CH_assert( m_phase_geometry != NULL );
+  const double larmor_number( m_units->larmorNumber() );
+  const PhaseGeom& phase_geometry( *m_phase_geometry );
+  const CFG::MagGeom& mag_geom( phase_geometry.magGeom() );
+  const CFG::DisjointBoxLayout& cfg_grids = mag_geom.gridsFull();
+  
+  // Diagnostics quantity
+  a_var.define( cfg_grids, 4, CFG::IntVect::Zero );
+  
+  CFG::LevelData<CFG::FArrayBox> zero(cfg_grids, 1, CFG::IntVect::Zero );
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    zero[dit].setVal(0.);
+  }
+  
+  // Get parallel kinetic pressure (includes mVpar^2/2 term)
+  CFG::LevelData<CFG::FArrayBox> parallel_pressure(cfg_grids, 1, CFG::IntVect::Zero );
+  a_soln_species.parallelPressure(parallel_pressure, zero);
+  
+  CFG::LevelData<CFG::FArrayBox> par_pressure_wghosts(cfg_grids, 1, 2*CFG::IntVect::Unit );
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    par_pressure_wghosts[dit].copy(parallel_pressure[dit]);
+  }
+  mag_geom.fillInternalGhosts(par_pressure_wghosts);
+  
+  int nghosts = 2;
+  mag_geom.extrapolateAtPhysicalBoundaries(par_pressure_wghosts, 2, nghosts);
+  
+  // Get mapped pressure gradient
+  CFG::LevelData<CFG::FArrayBox> pressure_gradient_mapped( cfg_grids, CFG_DIM, CFG::IntVect::Unit );
+  mag_geom.computeMappedGradient(par_pressure_wghosts, pressure_gradient_mapped, 2);
+  
+  // Get physical pressure gradient
+  CFG::LevelData<CFG::FArrayBox> pressure_gradient(cfg_grids, CFG_DIM, CFG::IntVect::Unit);
+  
+#if CFG_DIM==2
+  mag_geom.unmapPoloidalGradient(pressure_gradient_mapped, pressure_gradient);
+#else
+  mag_geom.unmapGradient(pressure_gradient_mapped, pressure_gradient);
+#endif
+  
+  // Get parallel pressure gradient
+  CFG::LevelData<CFG::FArrayBox> pressure_gradient_par(cfg_grids, 1, CFG::IntVect::Zero);
+  mag_geom.computeParallelProjection(pressure_gradient_par, pressure_gradient);
+  
+  // Fill the first component: -grad(P_par)
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    a_var[dit].copy(pressure_gradient_par[dit],0,0,1);
+    a_var[dit].mult(-1.0, 0, 1);
+  }
+
+  // Get Efield (returns 3-component vector)
+  CFG::LevelData<CFG::FArrayBox> E_field;
+  m_ops->getEField(E_field);
+
+  // Get parallel Efield
+  CFG::LevelData<CFG::FArrayBox> E_field_par(cfg_grids, 1, CFG::IntVect::Zero);
+  
+#if CFG_DIM == 2
+  CFG::LevelData<CFG::FArrayBox> E_field_tmp(cfg_grids, 2, CFG::IntVect::Zero);
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    E_field_tmp[dit].copy(E_field[dit],0,0,1);
+    E_field_tmp[dit].copy(E_field[dit],2,1,1);
+  }
+  mag_geom.computeParallelProjection(E_field_par, E_field_tmp);
+#else
+  mag_geom.computeParallelProjection(E_field_par, E_field);
+#endif
+  
+  // Get number density
+  CFG::LevelData<CFG::FArrayBox> density(cfg_grids, 1, CFG::IntVect::Zero );
+  a_soln_species.numberDensity( density );
+
+  // Get speciesl charge
+  Real charge = a_soln_species.charge();
+  
+  // Fill the second component: q * E_par * n
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    a_var[dit].copy(E_field_par[dit],0, 1, 1);
+    a_var[dit].mult(density[dit], 0, 1, 1);
+    a_var[dit].mult(charge, 1, 1);
+  }
+
+  // Create vlasov class using input file initializations
+  ParmParse pp_vlasov("gkvlasov");
+  GKVlasov vlasov(pp_vlasov, larmor_number);
+  
+  // Create a copy of the solution species with ghosts, which are needed for flux calculations
+  int order = (phase_geometry.secondOrder()) ? 2 : 4;
+  int ghosts = (order == 2) ? 2 : 3;
+  KineticSpeciesPtr species_with_ghosts( a_soln_species.clone( ghosts*IntVect::Unit, true ) );
+  
+  LevelData<FArrayBox>& dfn_with_ghosts( species_with_ghosts->distributionFunction() );
+   
+  // Fill interior ghosts; have to use species-specific geometry
+  const PhaseGeom& species_geometry = a_soln_species.phaseSpaceGeometry();
+  species_geometry.fillInternalGhosts(dfn_with_ghosts);
+  
+  // Extrapolate to physical ghosts
+  int nghost = 2;
+  species_geometry.extrapolateAtPhysicalBoundaries(dfn_with_ghosts, order, nghost);
+  
+  // Create a temporary species, whose dfn will be used for Vlasov RHS evaluation
+  KineticSpeciesPtr rhs_species( a_soln_species.clone( IntVect::Zero, false ) );
+  LevelData<FArrayBox>& rhs_dfn( rhs_species->distributionFunction() );
+  
+  // Set that rhs_dfn to zero
+  for (DataIterator dit(rhs_dfn.dataIterator()); dit.ok(); ++dit) {
+     rhs_dfn[dit].setVal( 0. );
+  }
+
+  // Get full vlasov RHS
+  const CFG::EMFields& EM_fields = m_ops->getEMFields();
+  vlasov.evalRHS(*rhs_species,
+                 *species_with_ghosts,
+                 EM_fields,
+                 PhaseGeom::FULL_VELOCITY,
+                 0. );
+
+  
+  // Get nVpar moment
+  CFG::LevelData<CFG::FArrayBox> cfg_data( cfg_grids, 1, CFG::IntVect::Zero);
+  rhs_species->parallelParticleFlux( cfg_data );
+  mag_geom.divideJonValid(cfg_data);
+  
+  // Fill the thrid component with d(m*n*Vpar)/dt for full Vlasov RHS
+  Real mass = a_soln_species.mass();
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    cfg_data[dit].mult(mass);
+    a_var[dit].copy(cfg_data[dit], 0, 2, 1);
+  }
+  
+  // Get vlasov RHS without drift contributions
+  for (DataIterator dit(rhs_dfn.dataIterator()); dit.ok(); ++dit) {
+     rhs_dfn[dit].setVal( 0. );
+  }
+  
+  vlasov.evalRHS(*rhs_species,
+                 *species_with_ghosts,
+                 EM_fields,
+                 PhaseGeom::PARALLEL_STREAMING_VELOCITY,
+                 0. );
+
+  // Get nVpar moment
+  rhs_species->parallelParticleFlux( cfg_data );
+  mag_geom.divideJonValid(cfg_data);
+  
+  // Fill the fourth component with d(m*n*Vpar)/dt for Vlasov RHS without drifts
+  // (this should be close to the sum of the first and second components)
+  for (auto dit(cfg_grids.dataIterator()); dit.ok(); ++dit) {
+    cfg_data[dit].mult(mass);
+    a_var[dit].copy(cfg_data[dit], 0, 3, 1);
   }
 
   return;

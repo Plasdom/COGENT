@@ -67,8 +67,9 @@ private:
 
    int m_verbosity;
 
-   bool m_include_chx, m_chx_model_friction, m_first_call;
+   bool m_include_chx, m_chx_model_friction, m_first_call, m_use_Te_in_rate_calculation, m_include_iz_energy_loss;
    bool m_SI_input;
+   int electron_species_index;
 
    double m_ionization_norm;
    double m_chx_norm;
@@ -80,13 +81,19 @@ private:
 
    CFG::LevelData<CFG::FArrayBox> m_neutral_density_cfg;
    CFG::LevelData<CFG::FArrayBox> m_neutral_velocity_cfg;
+   CFG::LevelData<CFG::FArrayBox> m_iz_source_density_cfg;
+   CFG::LevelData<CFG::FArrayBox> m_iz_source_temperature_cfg;
    CFG::LevelData<CFG::FArrayBox> m_Te_cfg;
    
    
    LevelData<FArrayBox> m_ionization_sigmaV;
    LevelData<FArrayBox> m_neutral_dfn;
+   LevelData<FArrayBox> m_iz_source_maxw;
+   LevelData<FArrayBox> m_iz_source_dfn;
    LevelData<FArrayBox> m_neutral_maxw;
    LevelData<FArrayBox> m_ni_inj;
+   LevelData<FArrayBox> m_ne_inj;
+   double E_iz = 13.6;
 
    bool m_first_call_tscale;
    
@@ -95,6 +102,11 @@ private:
       rhs = <sigmaV_ionization> * neutr_dens * fB
     */
    void computeIonizationRHS( LevelData<FArrayBox>& rhs,
+                              const LevelData<FArrayBox>& soln_dfn,
+                              const LevelData<FArrayBox>& neutral_density) const;
+
+    void computeIonizationWithEnLossRHS( LevelData<FArrayBox>& rhs,
+                              const LevelData<FArrayBox>& source_dfn,
                               const LevelData<FArrayBox>& soln_dfn,
                               const LevelData<FArrayBox>& neutral_density) const;
    
@@ -143,6 +155,8 @@ private:
    
    
    void updateNeutralDfn(const KineticSpecies&  a_ion_species);
+   
+   void updateIzSourceDfn(const KineticSpecies&  a_ion_species);
    
    
    /// Parse parameters.

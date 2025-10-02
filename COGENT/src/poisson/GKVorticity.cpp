@@ -222,9 +222,7 @@ GKVorticity::computeVorticityCoefficients(const LevelData<FArrayBox>& a_ion_mass
    convertCellToFace(m_electron_temperature_face, a_electron_temperature);
    
    //Update parallel conductivity
-   if (m_parallel_conductivity_func != NULL) {
-      updateParallelConductivity(m_electron_temperature_face, m_parallel_cond_face);
-   }
+   updateParallelConductivity(m_electron_temperature_face, m_parallel_cond_face);
    
    const LevelData<FluxBox>& BFieldMag = m_geometry.getFCBFieldMag();
    

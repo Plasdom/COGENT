@@ -7,6 +7,8 @@
 #include "PhaseGeom.H"
 #include "SPMD.H"
 #include "LogicalSheathBC.H"
+//#include "InsulatingSheathBC.H"
+#include "InsulatingSheathBCnew.H"
 #include "FluxBC.H"
 #include "PhaseBCUtils.H"
 
@@ -239,6 +241,8 @@ LogRectPhaseBC::LogRectPhaseBC( const std::string& a_name,
      m_verbosity(a_verbosity),
      m_all_bdry_defined(false),
      m_logical_sheath_bc(false),
+     //m_insulating_sheath_bc(false),
+     m_insulating_sheath_bc_new(false),
      m_flux_bc(false),
      m_pp(a_pp)
 
@@ -364,12 +368,19 @@ void LogRectPhaseBC::apply(KineticSpeciesPtrVect&  a_species,
                                      coord_sys,
                                      a_velocity );
    CH_STOP(t_set_inflow_outflow_BC);
-   
-   if (m_logical_sheath_bc) {
+       
+          if (m_logical_sheath_bc) {
       applySheathBC(a_species, a_species_index, a_phi, a_velocity);
    }
+       
+	  /*else if (m_insulating_sheath_bc) {
+      applyInsulatingBC(a_species, a_species_index, a_phi, a_velocity);
+      }*/
+   else if (m_insulating_sheath_bc_new) {
+      applyInsulatingBC_new(a_species, a_species_index, a_phi, a_velocity, a_time);
+   }
       
-   if (m_flux_bc) {
+   else if (m_flux_bc) {
       applyFluxBC(species_physical, a_phi, a_velocity, a_time);
    }
 
@@ -389,6 +400,99 @@ void LogRectPhaseBC::setAllBcType( const BoundaryBoxLayoutPtrVect&  a_bdry_layou
       const int& dir( bdry_layout.dir() );
       const Side::LoHiSide& side( bdry_layout.side() );
       m_all_bc_type[i] = getBcType(dir, side);
+   }
+}
+
+/*
+void LogRectPhaseBC::applyInsulatingBC( KineticSpeciesPtrVect&  a_species,
+                                    const int&  a_species_index,
+                                    const CFG::LevelData<CFG::FArrayBox>& a_phi,
+                                    const LevelData<FluxBox>& a_velocity)
+{
+   // Just copy-paste stuff for now
+   // Get coordinate system parameters
+   KineticSpecies& species_physical( *(a_species[a_species_index]) );
+   const PhaseGeom& geometry( species_physical.phaseSpaceGeometry() );
+   const MultiBlockCoordSys& coord_sys( *(geometry.coordSysPtr()) );
+   const PhaseGrid& phase_grid = geometry.phaseGrid();
+   const DisjointBoxLayout& dbl = phase_grid.disjointBoxLayout();
+   
+   //For sheath BC calculations we only need one-cell-wide
+   //boundary storage, so define it here
+   BoundaryBoxLayoutPtrVect all_bdry_layouts;
+   PhaseBCUtils::defineBoundaryBoxLayouts(all_bdry_layouts,
+                                          dbl,
+                                          coord_sys,
+                                          IntVect::Unit );
+
+   // Loop over boundaries
+   for (int i(0); i<all_bdry_layouts.size(); i++) {
+      const BoundaryBoxLayout& bdry_layout( *(all_bdry_layouts[i]) );
+      const int& dir( bdry_layout.dir() );
+      const Side::LoHiSide& side( bdry_layout.side() );
+      
+      if (getBcType(dir, side) == "insulating_sheath") {
+
+         std::string prefix( m_pp.prefix() );
+         prefix += "." + m_bdry_name[i];
+         ParmParse pp( prefix.c_str() );
+
+         InsulatingSheathBC sheathBC(all_bdry_layouts[i], pp);
+         sheathBC.applyBC(a_species, a_species_index, a_velocity, a_phi);
+      }
+   }
+}
+*/
+
+void LogRectPhaseBC::applyInsulatingBC_new( KineticSpeciesPtrVect&  a_species,
+                                    const int&  a_species_index,
+                                    const CFG::LevelData<CFG::FArrayBox>& a_phi,
+                                    const LevelData<FluxBox>& a_velocity,
+                                    const Real& a_time)
+{
+       
+   // Just copy-paste stuff for now
+   // Get coordinate system parameters
+   KineticSpecies& species_physical( *(a_species[a_species_index]) );
+   const PhaseGeom& geometry( species_physical.phaseSpaceGeometry() );
+   const MultiBlockCoordSys& coord_sys( *(geometry.coordSysPtr()) );
+   const PhaseGrid& phase_grid = geometry.phaseGrid();
+   const DisjointBoxLayout& dbl = phase_grid.disjointBoxLayout();
+   
+   //For sheath BC calculations we only need one-cell-wide
+   //boundary storage, so define it here
+   BoundaryBoxLayoutPtrVect all_bdry_layouts;
+   PhaseBCUtils::defineBoundaryBoxLayouts(all_bdry_layouts,
+                                          dbl,
+                                          coord_sys,
+                                          IntVect::Unit );
+
+   // Loop over boundaries
+   for (int i(0); i<all_bdry_layouts.size(); i++) {
+      const BoundaryBoxLayout& bdry_layout( *(all_bdry_layouts[i]) );
+      const int& dir( bdry_layout.dir() );
+      const Side::LoHiSide& side( bdry_layout.side() );
+      
+      if (getBcType(dir, side) == "insulating_sheath_new") {
+
+         std::string prefix( m_pp.prefix() );
+         prefix += "." + m_bdry_name[i];
+         ParmParse pp( prefix.c_str() );
+
+
+	 // Testing velocity
+	 //CFG::IntVect iv_plot;
+	 //iv_plot[0] = 0;
+	 //iv_plot[1] = 1;
+	 //geometry.plotAtConfigurationIndex("velocty_data", iv_plot, a_velocity, 0.0);
+	 //MayDay::Error( "DONE" );
+       //// End testing 
+   
+         // i is the index taken from the loop
+         // In fact, we do need an ID of the boundary
+         InsulatingSheathBC_new sheathBC(all_bdry_layouts[i], pp, i, a_time);
+         sheathBC.applyBC(a_species, a_species_index, a_velocity, a_phi);
+      }
    }
 }
 
@@ -523,9 +627,17 @@ void LogRectPhaseBC::parseParameters( ParmParse& a_pp )
       if (m_bc_type[i] == "flux") {
          m_flux_bc = true;
       }
-
-      if (m_bc_type[i] == "logical_sheath") {
+      
+      /// Logical sheath has higher priority over insulating sheath to protect from double definition in the input file
+      else if (m_bc_type[i] == "logical_sheath") {
          m_logical_sheath_bc = true;
+      }
+
+      /*else if (m_bc_type[i] == "insulating_sheath") {
+         m_insulating_sheath_bc = true;
+	 }*/
+      else if (m_bc_type[i] == "insulating_sheath_new") {
+         m_insulating_sheath_bc_new = true;
       }
    }
    

@@ -135,7 +135,7 @@ public:
 
 protected:
    
-   virtual void getPlasmaParameters(const Real time);
+   virtual void getPlasmaParameters(const Real time, const PS::KineticSpeciesPtrVect&   a_kinetic_species_phys);
 
    virtual void computeDiffusionCoefficients(LevelData<FluxBox>& D_tensor,
                                              LevelData<FluxBox>& D_tensor_mapped,

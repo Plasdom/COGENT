@@ -1,5 +1,202 @@
 #include "CONSTANTS.H"
 
+
+      subroutine compute_total_current(
+     &     CHF_CONST_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_REAL[current_loc]
+     &     )
+     
+      REAL_T sum
+      integer i,j,k,l
+      
+      sum = 0.0
+      
+      CHF_MULTIDO[bdrybox;i;j;k;l]
+        sum = sum + f(i,j,k,l)
+      CHF_ENDDO
+      current_loc = sum
+      return
+      end
+  
+  
+c    
+c      subroutine clean_box_end(
+c     &     CHF_FRA1[a_f],
+c     &     CHF_BOX[a_box],
+c     &     CHF_CONST_INT[a_dir],
+c     &     CHF_CONST_INT[a_ng],
+c     &     CHF_CONST_INT[a_end]
+c     &     )
+c    
+cc     The method cleans distribution function a_f at the end of the box a_box.
+cc     a_ng is the number of ghost cells in teh direction a_dir to be cleared.
+cc     a_end is a flag the is -1 for the lower end and +1 for the upper end
+c    
+cc    
+cc     local variables
+cc    
+c      integer i_x, i_y, i_v, i_mu
+c      integer x_l_b, x_h_b, y_l_b, y_h_b, v_l_b, v_h_b, mu_l_b, mu_h_b 
+c      integer x1, x2, x3, y1, y2, y3
+c      
+cc     IT WORKS IN 4D ONLY!!!
+c      if ((a_dir.ge.4) OR (a_dir.le-1)) then
+cc       There should be a message of failure or something
+c        return
+c      endif
+cc     Define a set of coefficients to properly modify lower and upper lmits of the loop over array
+c      if (a_end.eq.1) then
+c         x1 = 0
+c         x2 = 1
+c         x3 = -1
+c         y1 = 1
+c         y2 = 0
+c         y3 = 0
+c      else if (a_end.eq.-1) then
+c         x1 = 1
+c         x2 = 0
+c         x3 = 0
+c         y1 = 1
+c         y2 = 1
+c         y3 = 0
+c      else      
+cc     Again, there should be an error message here        
+c        return
+c      endif
+c      
+c      if(a_dir.eq.0) then
+c      x_l_b = x1*ibdryboxlo3 + x2*ibdryboxhi3 + x3*a_ng
+c      x_h_b = y1*ibdryboxlo3 + y2*ibdryboxhi3 + y3*a_ng
+c      else if(a_dir.eq.1) then
+c      y_l_b = x1*ibdryboxlo2 + x2*ibdryboxhi2 + x3*a_ng
+c      y_h_b = y1*ibdryboxlo2 + y2*ibdryboxhi2 + y3*a_ng
+c      else if(a_dir.eq.2) then
+c      v_l_b = x1*ibdryboxlo1 + x2*ibdryboxhi1 + x3*a_ng
+c      v_h_b = y1*ibdryboxlo1 + y2*ibdryboxhi1 + y3*a_ng
+c      else
+c      mu_l_b = x1*ibdryboxlo0 + x2*ibdryboxhi0 + x3*a_ng
+c      mu_h_b = y1*ibdryboxlo0 + y2*ibdryboxhi0 + y3*a_ng
+c      endif
+c      
+c      
+c      do i_x = x_l_b,x_h_b
+c        do i_y = y_l_b,y_h,b
+c          do i_v = v_l_b,v_h_b
+c            do i_mu = mu_l_b,mu_h_b
+c              f(i_x,i_y,i_v,i_mu) = 0.0
+c            enddo
+c          enddo
+c        enddo
+c      enddo
+c      
+c      return
+c      end
+
+      subroutine copy_level_data(
+     &     CHF_FRA1[f_dest],
+     &     CHF_FRA1[f_src],
+     &     CHF_BOX[box])
+      integer i,j,k,l
+      
+      CHF_MULTIDO[box;i;j;k;l]
+        f_dest(i,j,k,l) = f_src(i,j,k,l)
+      CHF_ENDDO           
+      return
+      end
+      
+      subroutine set_logical_sheath_bc_ex(
+     &     CHF_FRA1[f],
+     &     CHF_CONST_FRA[vel],
+     &     CHF_BOX[bdrybox],
+     &     CHF_R1D[arr_v],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     We assign f=0 if 0.5*mass*vparallel^2 > q Delta phi, and reflect if 0.5*mass*vparallel^2 < q Delta phi.
+c     Note reflection is done using the reflected distribution function f_rflct.
+
+
+c
+c     local variables
+c
+      integer i_x, i_y, i_v, i_mu, shift
+      integer ind_v, j_bdry
+      REAL_T pot_energy, kin_energy
+      REAL_T v_hi, v_lo, v_esc, factor
+      
+c     Set j or better say i_y on the boundary. It is implemented for y direction only for now!!! [FIX]
+      if (iside.eq.1) then
+        j_bdry = ibdryboxhi1
+      else
+        j_bdry = ibdryboxlo1
+      endif
+
+c     +1 because Fortran gets the last index for iarr_vi0 that is N-1
+      shift = (iarr_vhi0+1)/2
+
+c     Main loop
+      do i_mu = ibdryboxlo3,ibdryboxhi3
+        do i_v = ibdryboxlo2,ibdryboxhi2
+c         If NOT inflow
+          ind_v = i_v + shift
+          if ( (arr_v(ind_v)*iside).ge.0 ) then
+            cycle
+          endif
+c         Otherwise stay inside and fill ghost cells 
+          i_y = j_bdry
+c         Get v_lower and v_higher
+          if( (arr_v(ind_v+1)*arr_v(ind_v+1)).gt.(arr_v(ind_v)*arr_v(ind_v)) ) then
+            v_hi = 0.5*(arr_v(ind_v+1) + arr_v(ind_v))
+            v_lo = 0.5*(arr_v(ind_v-1) + arr_v(ind_v))
+          else
+            v_hi = 0.5*(arr_v(ind_v-1) + arr_v(ind_v))
+            v_lo = 0.5*(arr_v(ind_v+1) + arr_v(ind_v))
+          endif
+c         We assume that phi was injected to phase space, thus the last two indices are zeros. [FIX] possibly          
+c         phi at the boundary = 0; phi in the last boundary cell > 0 (as most electrons have left and positive boundary charge has accumulated.
+c         Electrons in a boundary cell have potenria lenergy -|q|*phi(last)<0, thus they will need kinetic energy to get to the boundary,
+c         which is equal to |q|*phi(last) = - charge*phi(last) > 0, since charge(e)<0
+          pot_energy = -charge * phi(i_x, i_y, ibdryboxlo2, ibdryboxlo3)
+cccc          kin_energy = 0.5*mass*v_lo*v_lo
+          kin_energy = 0.5*mass*arr_v(ind_v)*arr_v(ind_v)
+          do i_x = ibdryboxlo0,ibdryboxhi0
+            if (kin_energy.ge.pot_energy) then
+c             4 ghost cells are assumed!!! [FIX]
+              f(i_x, i_y+1*iside, i_v, i_mu) = 0.0
+              f(i_x, i_y+2*iside, i_v, i_mu) = 0.0
+              f(i_x, i_y+3*iside, i_v, i_mu) = 0.0
+              f(i_x, i_y+4*iside, i_v, i_mu) = 0.0
+            else
+c             Reflect the distribution function
+c             It should be corrected to enforce the total flux [FIX]            
+              f(i_x, i_y+1*iside, i_v, i_mu) = f(i_x, i_y-0*iside, i_v, i_mu)
+              f(i_x, i_y+2*iside, i_v, i_mu) = f(i_x, i_y-1*iside, i_v, i_mu)
+              f(i_x, i_y+3*iside, i_v, i_mu) = f(i_x, i_y-2*iside, i_v, i_mu)
+              f(i_x, i_y+4*iside, i_v, i_mu) = f(i_x, i_y-3*iside, i_v, i_mu)
+ccccc             Re-use kin_energy variable
+cccc              kin_energy = 0.5*mass*v_hi*v_hi
+cccc              if (kin_energy.ge.pot_energy) then
+ccccc             abs under the square root???
+cccc                v_esc = -sqrt(abs(2.0*pot_energy/mass))*iside
+cccc                factor = (v_esc - v_lo) / (v_hi - v_lo)
+cccc                  f(i_x, i_y+1*iside, i_v, i_mu) = factor*f(i_x, i_y-0*iside, i_v, i_mu)
+cccc                  f(i_x, i_y+2*iside, i_v, i_mu) = factor*f(i_x, i_y-1*iside, i_v, i_mu)
+cccc                  f(i_x, i_y+3*iside, i_v, i_mu) = factor*f(i_x, i_y-2*iside, i_v, i_mu)
+cccc                  f(i_x, i_y+4*iside, i_v, i_mu) = factor*f(i_x, i_y-3*iside, i_v, i_mu)                
+cccc              endif
+            endif
+          enddo
+        enddo
+      enddo
+
+      return
+      end
+      
+             
       subroutine set_logical_sheath_bc(
      &     CHF_FRA1[f],
      &     CHF_BOX[bdrybox],
@@ -24,6 +221,7 @@ c
       integer vn_jbdry, phi_jbdry
       integer jbdry,jsrc,jsrc_offset
       REAL_T pot_energy_min
+
 
 c
 c     First construct jbdry, the index of the first cell just inside the boundary box.
@@ -107,8 +305,9 @@ c
       integer isign
       integer vn_jbdry, phi_jbdry
       integer jbdry,jsrc,jsrc_offset
-      REAL_T pot_energy_min
-      REAL_T vel_esc, vel_center, vel_lower, vel_upper
+      REAL_T pot_energy_min, pot_tmp
+      REAL_T vel_esc, vel_center, vel_lower, vel_upper, err, denom
+      err = 0.000000001
 
 c
 c     First construct jbdry, the index of the first cell just inside the boundary box.
@@ -152,7 +351,18 @@ c            or set f = 0 otherwise
                f(i,j,k,l) = f_rflct(i,jsrc,-k-1,l)
                if (half*mass*(vel_upper**2).gt.pot_energy_min) then
                  vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
-                 f(i,j,k,l) = f(i,j,k,l)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+                 denom = ABS(vel_upper - vel_lower)
+                 pot_tmp = abs(two*pot_energy_min/mass)
+                 if (denom.le.err) then
+                   f(i,j,k,l) = 1000000.0
+                 else if (pot_tmp.lt.zero) then
+                   f(i,j,k,l) = -1000000.0
+                 else
+                   f(i,j,k,l) = f(i,j,k,l)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+                   if(isnan(f(i,j,k,l))) then
+                    f(i,j,k,l) = 10000000.0
+                   endif
+                 endif
                endif
              endif
           
@@ -193,5 +403,1024 @@ c            or set f = 0 otherwise
 
       CHF_ENDDO
 
+      return
+      end
+
+
+      subroutine set_logical_sheath_bc_special(
+     &     CHF_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_CONST_FRA1[f_rflct],
+     &     CHF_CONST_FRA[vel],
+     &     CHF_CONST_FRA1[vn],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     We assign f=0 if 0.5*mass*vparallel^2 > q Delta phi, and reflect if 0.5*mass*vparallel^2 < q Delta phi.
+c     Note reflection is done using the reflected distribution function f_rflct.
+
+
+c
+c     local variables
+c
+      integer i,j,k,l,m
+      integer i_x, i_y, i_v, i_mu
+      integer isign
+      integer vn_jbdry, phi_jbdry
+      integer jbdry,jsrc,jsrc_offset
+      REAL_T pot_energy_min
+      REAL_T vel_esc, vel_center, vel_lower, vel_upper
+      REAL_T total_weight, current_weight, tmp_val, factor
+      REAL_T neg_setup
+
+c
+c     First construct jbdry, the index of the first cell just inside the boundary box.
+c
+
+      if (iside.eq.0) then
+        jbdry = CHF_UBOUND[bdrybox;1]
+      else
+        jbdry = CHF_LBOUND[bdrybox;1]
+      endif
+      isign = 2*iside-1
+      jsrc_offset = 2 * jbdry - isign
+c
+#if CH_SPACEDIM==4
+c      do i_mu = ibdryboxlo3,ibdryboxhi3
+c        do i_v = ibdryboxlo2,ibdryboxhi2
+c          do i_y = ibdryboxlo1,ibdryboxhi1
+c            do i_x = ibdryboxlo0,ibdryboxhi0
+c              
+c              vn_jbdry = jbdry - isign + iside
+c              if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                phi_jbdry = jbdry - isign
+c                pot_energy_min = -charge * phi(i_x, phi_jbdry, CHF_LBOUND[phi;2], CHF_LBOUND[phi;3])
+c  Find v_upper and v_mim, which are different depending on the sign of the velocity
+c  for low i_v, v goes from -V_max to 0, for high i_v, v goes from 0 to V_max
+c                vel_center = vel(i_x,jbdry,i_v,i_mu,0)
+c                if( vel_center**2 .le. vel(i_x,jbdry,i_v+1,i_mu,0)**2 ) then
+c                  vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                  vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                else
+c                  vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                  vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                endif
+c  A new part: trying to fill total weight and current weight
+c                jsrc = jsrc_offset - i_y
+c                total_weight = total_weight + f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                if (half*mass*(vel_center**2).lt.pot_energy_min) then
+c                  tmp_val = f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+c                  vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+c                  tmp_val = tmp_val*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+c                endif
+c                current_weight = current_weight + tmp_val
+c                endif
+c              endif
+c            
+c            enddo
+c          enddo
+c        enddo
+c      enddo
+cccccccc        do i_x = CHF_LBOUND[bdrybox;0], CHF_UBOUND[bdrybox;0]
+c          do i_y = CHF_LBOUND[bdrybox;1], CHF_UBOUND[bdrybox;1]
+c              total_weight = 0.0
+c              current_weight = 0.0
+c              do i_v = CHF_LBOUND[bdrybox;2], CHF_UBOUND[bdrybox;2]
+c                  vn_jbdry = jbdry - isign + iside
+c                  do i_mu = CHF_LBOUND[bdrybox;3], CHF_UBOUND[bdrybox;3]
+c                      if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                          phi_jbdry = jbdry - isign
+c                          pot_energy_min = -charge * phi(i_x, phi_jbdry, CHF_LBOUND[phi;2], CHF_LBOUND[phi;3])
+c                          vel_center = vel(i_x,jbdry,i_v,i_mu,0)
+c                          if( vel_center**2 .le. vel(i_x,jbdry,i_v+1,i_mu,0)**2 ) then
+c                              vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                              vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                          else
+c                              vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                             vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                         endif
+c                         A new part: trying to fill total weight and current weight
+c                          jsrc = jsrc_offset - i_y
+c                          total_weight = total_weight + f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                          if (half*mass*(vel_center**2).lt.pot_energy_min) then
+c                              tmp_val = f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                              if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+c                                  vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+c                                  tmp_val = tmp_val*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+c                              endif
+c                              current_weight = current_weight + tmp_val
+c                          endif
+c                      endif  
+c                  end do 
+c              end do
+c              factor = current_weight/total_weight
+c              do i_v = CHF_LBOUND[bdrybox;2], CHF_UBOUND[bdrybox;2]
+c                  do i_mu = CHF_LBOUND[bdrybox;3], CHF_UBOUND[bdrybox;3]
+c                  vn_jbdry = jbdry - isign + iside
+c                  if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                      jsrc = jsrc_offset - i_y
+c                      f(i_x,i_y,i_v,i_mu) = factor*f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                  endif
+c                  end do
+c              end do
+c          
+c          end do
+c      end do
+      
+cc     Set all the values of f() to negative huge for further control 
+c      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+c      f(i,j,k,l) = neg_setup
+c      CHF_ENDDO  
+      
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          
+
+          if (isign*vn(i,vn_jbdry,k,l).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,0)
+c            Find v_upper and v_mim, which are different depending on the sign of the velocity
+c            for low k v goes from -V_max to 0, for hight k v goes from 0 to V_max
+             if( vel_center**2 .le. vel(i,jbdry,k+1,l,0)**2 ) then
+                vel_upper = half*(vel(i,jbdry,k,l,0) + vel(i,jbdry,k+1,l,0))
+                vel_lower = half*(vel(i,jbdry,k,l,0) + vel(i,jbdry,k-1,l,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,0) + vel(i,jbdry,k+1,l,0))
+                vel_upper = half*(vel(i,jbdry,k,l,0) + vel(i,jbdry,k-1,l,0))
+             endif
+
+             if (half*mass*(vel_lower**2).gt.pot_energy_min) then
+               f(i,j,k,l) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l) = f_rflct(i,jsrc,-k-1,l)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l) = f(i,j,k,l)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+c             if (half*mass*(vel_center**2).gt.pot_energy_min) then
+c               f(i,j,k,l) = zero
+c             else
+c               jsrc = jsrc_offset - j
+c               f(i,j,k,l) = f_rflct(i,jsrc,-k-1,l)
+c               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+c                 vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+c                 f(i,j,k,l) = f(i,j,k,l)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+c               endif
+c             endif
+c          
+          endif
+
+      CHF_ENDDO
+      
+      
+#else
+
+c     THIS SUBROUTINE IS JUST WRONG NOW, IT WAS COPY-PASTED FROM THE PREVIOUS CODE
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          if (isign*vn(i,vn_jbdry,k,l,m).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,k,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,m,0)
+             if( (vel_center**2) .le. (vel(i,jbdry,k,l+1,m,0)**2) ) then
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             endif
+
+             if (half * mass * (vel_center**2).gt.pot_energy_min) then
+               f(i,j,k,l,m) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l,m) = f_rflct(i,jsrc,k,-l-1,m)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = sqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l,m) = f(i,j,k,l,m)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+          
+          endif
+      CHF_ENDDO
+#endif
+
+
+
+      return
+      end
+
+c for test only
+
+      subroutine compare_kernels(
+     &     CHF_FRA1[kernel],
+     &     CHF_FRA1[kernel1],
+     &     CHF_BOX[box],
+     &     CHF_real[val]
+     &     )
+
+      integer i,j,k,l
+      REAL_T tmp
+      
+      val = 0      
+      CHF_MULTIDO[box;i;j;k;l]
+        val = val + abs(kernel(i,j,k,l) - kernel1(i,j,k,l))
+      CHF_ENDDO
+      
+      return
+      end
+      
+      
+      subroutine compute_bc_kernel(
+     &     CHF_FRA1[kernel],
+     &     CHF_BOX[box],
+     &     CHF_CONST_FRA1[dfn],
+     &     CHF_CONST_FRA1[vel_par],
+     &     CHF_CONST_REAL[factor],
+     &     CHF_CONST_REAL[vel_esc],
+     &     CHF_CONST_INT[sign],
+     &     CHF_CONST_REAL[dv_par]
+     &     )
+c    Compute product of v*f*kernel 
+      integer i,j,k,l
+      REAL_T vel_tmp, vel_hi, vel_lo, this_v
+            
+      CHF_MULTIDO[box;i;j;k;l]
+        this_v = vel_par(i,j,k,l)
+        kernel(i,j,k,l) = factor*dfn(i,j,k,l)*this_v
+        if (sign*this_v<0) then
+          kernel(i,j,k,l) = 0.0
+        else
+          vel_tmp = abs(this_v);
+          vel_hi = vel_tmp + 0.5*dv_par
+          vel_lo = vel_tmp - 0.5*dv_par
+          if (vel_hi<vel_esc) then
+            kernel(i,j,k,l) = 0.0
+            CONTINUE
+          endif
+          if (vel_lo>vel_esc) then
+            CONTINUE
+          endif
+          kernel(i,j,k,l) = kernel(i,j,k,l)*(vel_hi-vel_esc)/dv_par
+        endif
+      CHF_ENDDO
+      
+      return
+      end
+                                       
+      
+      subroutine set_logical_sheath_bc_special2(
+     &     CHF_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_CONST_FRA1[f_rflct],
+     &     CHF_CONST_R1D[arr_v],
+     &     CHF_CONST_FRA1[vn],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     We assign f=0 if 0.5*mass*vparallel^2 > q Delta phi, and reflect if 0.5*mass*vparallel^2 < q Delta phi.
+c     Note reflection is done using the reflected distribution function f_rflct.
+
+
+c
+c     local variables
+c
+      integer i,j,k,l,m,shift, ind_v
+      integer i_x, i_y, i_v, i_mu
+      integer isign
+      integer vn_jbdry, phi_jbdry
+      integer jbdry,jsrc,jsrc_offset
+      REAL_T pot_energy
+      REAL_T v_esc, v_center, v_lo, v_hi
+      REAL_T total_weight, current_weight, tmp_val, factor
+      REAL_T neg_setup, direction, deriv, f_m1, f_m2, f_0, xi, kin_energy
+c     +1 because Fortran gets the last index for iarr_vi0 that is N-1
+      shift = (iarr_vhi0+1)/2
+c
+c     First construct jbdry, the index of the first cell just inside the boundary box.
+c
+
+      if (iside.eq.0) then
+        jbdry = CHF_UBOUND[bdrybox;1]
+      else
+        jbdry = CHF_LBOUND[bdrybox;1]
+      endif
+      isign = 2*iside-1
+      jsrc_offset = 2 * jbdry - isign
+c
+#if CH_SPACEDIM==4
+c      do i_mu = ibdryboxlo3,ibdryboxhi3
+c        do i_v = ibdryboxlo2,ibdryboxhi2
+c          do i_y = ibdryboxlo1,ibdryboxhi1
+c            do i_x = ibdryboxlo0,ibdryboxhi0
+c              
+c              vn_jbdry = jbdry - isign + iside
+c              if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                phi_jbdry = jbdry - isign
+c                pot_energy_min = -charge * phi(i_x, phi_jbdry, CHF_LBOUND[phi;2], CHF_LBOUND[phi;3])
+c  Find v_upper and v_mim, which are different depending on the sign of the velocity
+c  for low i_v, v goes from -V_max to 0, for high i_v, v goes from 0 to V_max
+c                vel_center = vel(i_x,jbdry,i_v,i_mu,0)
+c                if( vel_center**2 .le. vel(i_x,jbdry,i_v+1,i_mu,0)**2 ) then
+c                  vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                  vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                else
+c                  vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                  vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                endif
+c  A new part: trying to fill total weight and current weight
+c                jsrc = jsrc_offset - i_y
+c                total_weight = total_weight + f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                if (half*mass*(vel_center**2).lt.pot_energy_min) then
+c                  tmp_val = f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+c                  vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+c                  tmp_val = tmp_val*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+c                endif
+c                current_weight = current_weight + tmp_val
+c                endif
+c              endif
+c            
+c            enddo
+c          enddo
+c        enddo
+c      enddo
+cccccccc        do i_x = CHF_LBOUND[bdrybox;0], CHF_UBOUND[bdrybox;0]
+c          do i_y = CHF_LBOUND[bdrybox;1], CHF_UBOUND[bdrybox;1]
+c              total_weight = 0.0
+c              current_weight = 0.0
+c              do i_v = CHF_LBOUND[bdrybox;2], CHF_UBOUND[bdrybox;2]
+c                  vn_jbdry = jbdry - isign + iside
+c                  do i_mu = CHF_LBOUND[bdrybox;3], CHF_UBOUND[bdrybox;3]
+c                      if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                          phi_jbdry = jbdry - isign
+c                          pot_energy_min = -charge * phi(i_x, phi_jbdry, CHF_LBOUND[phi;2], CHF_LBOUND[phi;3])
+c                          vel_center = vel(i_x,jbdry,i_v,i_mu,0)
+c                          if( vel_center**2 .le. vel(i_x,jbdry,i_v+1,i_mu,0)**2 ) then
+c                              vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                              vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                          else
+c                              vel_lower = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v+1,i_mu,0))
+c                             vel_upper = half*(vel(i_x,jbdry,i_v,i_mu,0) + vel(i_x,jbdry,i_v-1,i_mu,0))
+c                         endif
+c                         A new part: trying to fill total weight and current weight
+c                          jsrc = jsrc_offset - i_y
+c                          total_weight = total_weight + f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                          if (half*mass*(vel_center**2).lt.pot_energy_min) then
+c                              tmp_val = f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                              if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+c                                  vel_esc = dsqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+c                                  tmp_val = tmp_val*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+c                              endif
+c                              current_weight = current_weight + tmp_val
+c                          endif
+c                      endif  
+c                  end do 
+c              end do
+c              factor = current_weight/total_weight
+c              do i_v = CHF_LBOUND[bdrybox;2], CHF_UBOUND[bdrybox;2]
+c                  do i_mu = CHF_LBOUND[bdrybox;3], CHF_UBOUND[bdrybox;3]
+c                  vn_jbdry = jbdry - isign + iside
+c                  if (isign*vn(i_x,vn_jbdry,i_v,i_mu).le.zero) then
+c                      jsrc = jsrc_offset - i_y
+c                      f(i_x,i_y,i_v,i_mu) = factor*f_rflct(i_x,jsrc,-i_v-1,i_mu)
+c                  endif
+c                  end do
+c              end do
+c          
+c          end do
+c      end do
+      
+cc     Set all the values of f() to negative huge for further control 
+c      neg_setup = -1000000
+c      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+c      f(i,j,k,l) = neg_setup - 1
+c      CHF_ENDDO  
+c      
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+
+          if (isign*vn(i,vn_jbdry,k,l).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy = -charge * phi(i,phi_jbdry,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+             ind_v = k + shift
+             v_center = arr_v(ind_v)
+c            Find v_upper and v_mim, which are different depending on the sign of the velocity
+c            for low k v goes from -V_max to 0, for hight k v goes from 0 to V_max
+             if( v_center**2 .le. arr_v(ind_v+1)*arr_v(ind_v+1) ) then
+               v_hi = 0.5*(arr_v(ind_v+1) + arr_v(ind_v))
+               v_lo = 0.5*(arr_v(ind_v-1) + arr_v(ind_v))
+             else
+               v_hi = 0.5*(arr_v(ind_v-1) + arr_v(ind_v))
+               v_lo = 0.5*(arr_v(ind_v+1) + arr_v(ind_v))
+             endif
+             kin_energy = 0.5*mass*v_lo*v_lo
+c             kin_energy = 0.5*mass*arr_v(ind_v)*arr_v(ind_v)
+
+             if (kin_energy.gt.pot_energy) then
+               f(i,j,k,l) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l) = f_rflct(i,jsrc,-k-1,l)
+               
+               kin_energy = 0.5*mass*v_hi*v_hi
+               if (kin_energy.ge.pot_energy) then
+ccccc             abs under the square root???
+c                   v_esc = -sqrt(abs(2.0*pot_energy/mass))*iside
+                 v_esc = sqrt(abs(two*pot_energy/mass))*sign(one,v_center)
+                 factor = (v_esc - v_lo) / (v_hi - v_lo)
+                 f(i,j,k,l) = factor*f(i,j,k,l)
+               endif
+             endif
+           endif
+
+      CHF_ENDDO
+      
+#else
+
+c     THIS SUBROUTINE IS JUST WRONG NOW, IT WAS COPY-PASTED FROM THE PREVIOUS CODE
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          if (isign*vn(i,vn_jbdry,k,l,m).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,k,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,m,0)
+             if( (vel_center**2) .le. (vel(i,jbdry,k,l+1,m,0)**2) ) then
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             endif
+
+             if (half * mass * (vel_center**2).gt.pot_energy_min) then
+               f(i,j,k,l,m) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l,m) = f_rflct(i,jsrc,k,-l-1,m)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = sqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l,m) = f(i,j,k,l,m)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+          
+          endif
+      CHF_ENDDO
+#endif
+
+
+
+      return
+      end
+      
+
+      subroutine set_logical_sheath_bc_uw3(
+     &     CHF_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_CONST_FRA1[f_rflct],
+     &     CHF_CONST_R1D[arr_v],
+     &     CHF_CONST_FRA1[vn],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     This function is designed specifically for uw3 advection scheme.
+c     It does explicitly make use of the coefficients of the uw3 advection scheme
+c     In the present realization, it is implemented for y-boundaries only, i.e. y=0 and y=y_max
+c     with jbdry = -1 and jbdry = N, for the computational box (0:N-1) in y-direction
+
+
+c
+c     local variables
+c
+      integer i,j,k,l,m,shift, ind_v
+      integer i_x, i_y, i_v, i_mu
+      integer isign
+      integer vn_jbdry, phi_jbdry
+      integer jbdry,jsrc,jsrc_offset
+      REAL_T pot_energy, f_face
+      REAL_T v_esc, v_center, v_lo, v_hi
+      REAL_T total_weight, current_weight, tmp_val, factor
+      REAL_T neg_setup, direction, deriv, f_m1, f_m2, f_0, xi, kin_energy
+c     +1 because Fortran gets the last index for iarr_vi0 that is N-1
+      shift = (iarr_vhi0+1)/2
+c
+c     First construct jbdry, the index of the first cell just inside the boundary box.
+c
+
+      if (iside.eq.0) then
+        jbdry = CHF_UBOUND[bdrybox;1]
+      else
+        jbdry = CHF_LBOUND[bdrybox;1]
+      endif
+c     isign = -1 for lower boundary, i.e. j=0 and +1 for upper boundary, i.e. j=64 or whatever
+      isign = 2*iside-1
+      jsrc_offset = 2 * jbdry - isign
+      
+c
+#if CH_SPACEDIM==4
+c     vn_jboundary is the index for normal velocity: jbdr = -1, isign = -1, iside = 0 => vn_jbdry = 0 for lower and
+c     jbdr = 64, isign = 1, iside = 1 => vn_jbdry = 64 for upper boundar
+c     64 is just a randomg number for expample, it is box_v + 1
+c     since 64 is technically out of (0:63), we need to rethink and make sure everything is Ok here   
+      vn_jbdry = jbdry - isign + iside
+      do l = ibdryboxlo3,ibdryboxhi3
+      do k = ibdryboxlo2,ibdryboxhi2
+      do i = ibdryboxlo0,ibdryboxhi0
+c      VG tmp debug
+      if ((i.eq.0).and.(k.eq.0).and.(l.eq.0)) then
+        vn_jbdry = jbdry - isign + iside
+      endif
+c     VG debug end
+c     this is too much accuracy leading to higher order pdf leakage f_face = ( 25.000d0*f_rflct(i,jbdry-isign,-k-1,l) - 23.000d0*f_rflct(i,jbdry-2*isign,-k-1,l) + 13.000d0*f_rflct(i,jbdry-3*isign,-k-1,l) - 3.000d0*f_rflct(i,jbdry-4*isign,-k-1,l) ) / 12.000d0
+      f_face = ( 13.000d0*f_rflct(i,jbdry-isign,-k-1,l) - 13.000d0*f_rflct(i,jbdry-2*isign,-k-1,l) + 8.000d0*f_rflct(i,jbdry-3*isign,-k-1,l) - 2.000d0*f_rflct(i,jbdry-4*isign,-k-1,l) ) / 6.000d0
+c     this does not work, since f_refl does not have proper value in ghost cells      f_face = ( 2.00d0*f_rflct(i,jbdry,-k-1,l) + 5.00d0*f_rflct(i,jbdry-1*isign,-k-1,l) - f_rflct(i,jbdry-2*isign,-k-1,l) ) / 6.000d0
+      if (isign*vn(i,vn_jbdry,k,l).le.zero) then
+c            Inflow from limiter: find agjustment factor for the f_face depening on the particle energy             
+             phi_jbdry = jbdry - isign
+             pot_energy = -charge * phi(i,phi_jbdry,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+             ind_v = k + shift
+             v_center = arr_v(ind_v)
+c            Find v_upper and v_mim, which are different depending on the sign of the velocity
+c            for low k v goes from -V_max to 0, for hight k v goes from 0 to V_max
+c            Indices from -24 to -1 are for v<0, and from 0 to 23 for v>0
+c            v-array is cell centered
+             if( v_center**2 .le. arr_v(ind_v+1)*arr_v(ind_v+1) ) then
+               v_hi = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+             else
+               v_hi = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+             endif
+             kin_energy = mass*v_lo*v_lo / 2.000d0
+c             kin_energy = 0.5*mass*arr_v(ind_v)*arr_v(ind_v)
+
+             if (kin_energy.gt.pot_energy) then
+               f_face = 0.000d0
+             else
+               kin_energy = half*mass*v_hi*v_hi
+               if (kin_energy.ge.pot_energy) then
+                 v_esc = sqrt(abs(two*pot_energy/mass))*sign(one,v_center)
+                 factor = (v_esc - v_lo) / (v_hi - v_lo)
+                 f_face = factor*f_face
+               endif
+             endif
+c            We have prepared proper weigths for the face value of the distribution function
+c            Sovle for ghost cells
+             f(i,jbdry,k,l) = ( 6.000d0*f_face - 5.000d0*f(i,jbdry-isign,k,l) + f(i,jbdry-2*isign,k,l) ) / 2.000d0
+             f(i,jbdry+isign,k,l) = ( 18.000d0*f_face - 21.000d0*f(i,jbdry-isign,k,l) + 5.000d0*f(i,jbdry-2*isign,k,l) ) / 2.000d0
+cccc new robust version              f(i,jbdry,k,l) = 3.000d0*f(i,jbdry-isign,k,l) - 3.000d0*f(i,jbdry-2*isign,k,l) + f(i,jbdry-3*isign,k,l)
+cccc new robust version                f(i,jbdry+isign,k,l) = -6.000d0*f_face + 17.000d0*f(i,jbdry-isign,k,l) - 15.000d0*f(i,jbdry-2*isign,k,l) + 5.000d0*f(i,jbdry-3*isign,k,l)
+cccc         new tmp version
+cccc             f(i,jbdry,k,l) = ( - 6.000d0*f(i,jbdry-isign,k,l) + f(i,jbdry-2*isign,k,l) + 14.000d0*f_face ) / 9.000d0
+cccc             f(i,jbdry+isign,k,l) = ( 16.000d0*f_face - 12.000d0*f(i,jbdry-isign,k,l) + 5.000d0*f(i,jbdry-2*isign,k,l) ) / 9.000d0
+           endif
+      enddo
+      enddo
+      enddo
+      
+#else
+
+c     THIS SUBROUTINE IS JUST WRONG NOW, IT WAS COPY-PASTED FROM THE PREVIOUS CODE
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          if (isign*vn(i,vn_jbdry,k,l,m).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,k,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,m,0)
+             if( (vel_center**2) .le. (vel(i,jbdry,k,l+1,m,0)**2) ) then
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             endif
+
+             if (half * mass * (vel_center**2).gt.pot_energy_min) then
+               f(i,j,k,l,m) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l,m) = f_rflct(i,jsrc,k,-l-1,m)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = sqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l,m) = f(i,j,k,l,m)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+          
+          endif
+      CHF_ENDDO
+#endif
+
+      return
+      end
+      
+ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+
+
+c      FUNCTION computeFaceValueWENO(aptr)
+      function computeFaceValueWENO(aptr)
+      IMPLICIT NONE
+      REAL_T aptr(5)
+      REAL_T computeFaceValueWENO
+c      REAL_T, DIMENSION(:), INTENT(IN) :: aptr(:)
+c      REAL_T aptr(:)  
+      REAL_T beta1, beta2, beta3, face1, face2, face3, a_s
+      REAL_T d1, d2, d3, eps, face
+      eps = 1.0d-8
+      d1 = 0.100d0
+      d2 = 0.600d0
+      d3 = 0.300d0
+      face1 = (2.000d0*aptr(1) - 7.000d0*aptr(2) + 11.000d0*aptr(3)) / 6.000d0
+      face2 = (-1.000d0*aptr(2) + 5.000d0*aptr(3) + 2.000d0*aptr(4)) / 6.000d0
+      face3 = (2.000d0*aptr(3) + 5.000d0*aptr(4) - 1.000d0*aptr(5)) / 6.000d0
+      
+      beta1 = 13.000d0/12.000d0 * (aptr(1) - 2.000d0*aptr(2) + aptr(3))*(aptr(1) - 2.000d0*aptr(2) + aptr(3))
+      beta1 = beta1 + (aptr(1) - 4.000d0*aptr(2) + 3.000d0*aptr(3))*(aptr(1) - 4.000d0*aptr(2) + 3.000d0*aptr(3)) / 4.000d0
+      beta2 = 13.000d0/12.000d0 * (aptr(2) - 2.000d0*aptr(3) + aptr(4))*(aptr(2) - 2.000d0*aptr(3) + aptr(4))
+      beta2 = beta2 + (aptr(2) - aptr(4))*(aptr(2) - aptr(4)) / 4.000d0
+      beta3 = 13.000d0/12.000d0 * (aptr(3) - 2.000d0*aptr(4) + aptr(5))*(aptr(3) - 2.000d0*aptr(4) + aptr(5))
+      beta3 = beta3 + (3.000d0*aptr(3) - 4.000d0*aptr(4) + aptr(5))*(3.000d0*aptr(3) - 4.000d0*aptr(4) + aptr(5)) / 4.000d0
+
+c     Use the same beta to store alpha
+      beta1 = d1/(eps+beta1)/(eps+beta1)
+      beta2 = d2/(eps+beta2)/(eps+beta2)
+      beta3 = d3/(eps+beta3)/(eps+beta3)
+      
+      a_s = beta1 + beta2 + beta3
+      beta1 = beta1 / a_s
+      beta2 = beta2 / a_s
+      beta3 = beta3 / a_s
+      computeFaceValueWENO = beta1*face1 + beta2*face2 + beta3*face3
+c      face = beta1*face1 + beta2*face2 + beta3*face3
+c      computefacevalueweno = face
+      return
+      end
+c      END FUNCTION computeFaceValueWENO
+
+ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+      subroutine set_logical_sheath_bc_weno(
+     &     CHF_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_CONST_FRA1[f_rflct],
+     &     CHF_CONST_R1D[arr_v],
+     &     CHF_CONST_FRA1[vn],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     This function is designed specifically for weno advection scheme.
+c     cc It does explicitly make use of the coefficients of the uw3 advection scheme
+c     ccIn the present realization, it is implemented for y-boundaries only, i.e. y=0 and y=y_max
+c     ccwith jbdry = -1 and jbdry = N, for the computational box (0:N-1) in y-direction
+
+      
+c
+c     local variables
+c
+      integer i,j,k,l,m,shift, ind_v
+      integer i_x, i_y, i_v, i_mu
+      integer isign
+      integer vn_jbdry, phi_jbdry
+      integer jbdry,jsrc,jsrc_offset
+      REAL_T pot_energy, f_face
+      REAL_T computeFaceValueWENO
+      REAL_T v_esc, v_center, v_lo, v_hi
+      REAL_T total_weight, current_weight, tmp_val, factor
+      REAL_T neg_setup, direction, deriv, f_m1, f_m2, f_0, xi, kin_energy
+      REAL_T, DIMENSION(5) :: arr_ptr
+c      REAL_T arr_ptr(5)
+c     +1 because Fortran gets the last index for iarr_vi0 that is N-1
+      shift = (iarr_vhi0+1)/2
+c
+c     First construct jbdry, the index of the first cell just inside the boundary box.
+c
+
+      if (iside.eq.0) then
+        jbdry = CHF_UBOUND[bdrybox;1]
+      else 
+        jbdry = CHF_LBOUND[bdrybox;1]
+      endif
+c     isign = -1 for lower boundary, i.e. j=0 and +1 for upper boundary, i.e. j=64 or whatever
+      isign = 2*iside-1
+      jsrc_offset = 2 * jbdry - isign
+      
+c
+#if CH_SPACEDIM==4
+c     vn_jboundary is the index for normal velocity: jbdr = -1, isign = -1, iside = 0 => vn_jbdry = 0 for lower and
+c     jbdr = 64, isign = 1, iside = 1 => vn_jbdry = 64 for upper boundar
+c     64 is just a randomg number for expample, it is box_v + 1
+c     since 64 is technically out of (0:63), we need to rethink and make sure everything is Ok here   
+      vn_jbdry = jbdry - isign + iside
+      do l = ibdryboxlo3,ibdryboxhi3
+      do k = ibdryboxlo2,ibdryboxhi2
+      do i = ibdryboxlo0,ibdryboxhi0
+c      VG tmp debug
+      if ((i.eq.0).and.(k.eq.0).and.(l.eq.0)) then
+        vn_jbdry = jbdry - isign + iside
+      endif
+c     VG debug end
+      arr_ptr(1) = f_rflct(i,jbdry-3*isign,-k-1,l)
+      arr_ptr(2) = f_rflct(i,jbdry-2*isign,-k-1,l)
+      arr_ptr(3) = f_rflct(i,jbdry-isign,-k-1,l)
+      arr_ptr(4) = f_rflct(i,jbdry,-k-1,l)
+      arr_ptr(5) = f_rflct(i,jbdry+isign,-k-1,l)
+      f_face = computeFaceValueWENO(arr_ptr)
+      if (isign*vn(i,vn_jbdry,k,l).le.zero) then
+c            Inflow from limiter: find agjustment factor for the f_face depening on the particle energy             
+             phi_jbdry = jbdry - isign
+             pot_energy = -charge * phi(i,phi_jbdry,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+             ind_v = k + shift
+             v_center = arr_v(ind_v)
+c            Find v_upper and v_mim, which are different depending on the sign of the velocity
+c            for low k v goes from -V_max to 0, for hight k v goes from 0 to V_max
+c            Indices from -24 to -1 are for v<0, and from 0 to 23 for v>0
+c            v-array is cell centered
+             if( v_center**2 .le. arr_v(ind_v+1)*arr_v(ind_v+1) ) then
+               v_hi = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+             else
+               v_hi = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+             endif
+             kin_energy = mass*v_lo*v_lo / 2.000d0
+c             kin_energy = 0.5*mass*arr_v(ind_v)*arr_v(ind_v)
+
+             if (kin_energy.gt.pot_energy) then
+               f_face = 0.000d0
+             else
+               kin_energy = half*mass*v_hi*v_hi
+               if (kin_energy.ge.pot_energy) then
+                 v_esc = sqrt(abs(two*pot_energy/mass))*sign(one,v_center)
+                 factor = (v_esc - v_lo) / (v_hi - v_lo)
+                 f_face = factor*f_face
+               endif
+             endif
+c            We have prepared proper weigths for the face value of the distribution function
+c            Sovle for ghost cells
+             f(i,jbdry,k,l) = ( 6.000d0*f_face - 5.000d0*f(i,jbdry-isign,k,l) + f(i,jbdry-2*isign,k,l) ) / 2.000d0
+             f(i,jbdry+isign,k,l) = ( 18.000d0*f_face - 21.000d0*f(i,jbdry-isign,k,l) + 5.000d0*f(i,jbdry-2*isign,k,l) ) / 2.000d0
+c            add only one extra line here
+             f(i,jbdry+2*isign,k,l) = 18.000d0*f_face - 23.000d0*f(i,jbdry-isign,k,l) + 6.000d0*f(i,jbdry-2*isign,k,l)
+             
+cccc new robust version              f(i,jbdry,k,l) = 3.000d0*f(i,jbdry-isign,k,l) - 3.000d0*f(i,jbdry-2*isign,k,l) + f(i,jbdry-3*isign,k,l)
+cccc new robust version                f(i,jbdry+isign,k,l) = -6.000d0*f_face + 17.000d0*f(i,jbdry-isign,k,l) - 15.000d0*f(i,jbdry-2*isign,k,l) + 5.000d0*f(i,jbdry-3*isign,k,l)
+cccc         new tmp version
+cccc             f(i,jbdry,k,l) = ( - 6.000d0*f(i,jbdry-isign,k,l) + f(i,jbdry-2*isign,k,l) + 14.000d0*f_face ) / 9.000d0
+cccc             f(i,jbdry+isign,k,l) = ( 16.000d0*f_face - 12.000d0*f(i,jbdry-isign,k,l) + 5.000d0*f(i,jbdry-2*isign,k,l) ) / 9.000d0
+           endif
+      enddo
+      enddo
+      enddo
+      
+#else
+
+c     THIS SUBROUTINE IS JUST WRONG NOW, IT WAS COPY-PASTED FROM THE PREVIOUS CODE
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          if (isign*vn(i,vn_jbdry,k,l,m).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,k,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,m,0)
+             if( (vel_center**2) .le. (vel(i,jbdry,k,l+1,m,0)**2) ) then
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             endif
+
+             if (half * mass * (vel_center**2).gt.pot_energy_min) then
+               f(i,j,k,l,m) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l,m) = f_rflct(i,jsrc,k,-l-1,m)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = sqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l,m) = f(i,j,k,l,m)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+          
+          endif
+      CHF_ENDDO
+#endif
+    
+      return
+      end
+      
+c     ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc	  
+      subroutine set_logical_sheath_bc_uw3_ele(
+     &     CHF_FRA1[f],
+     &     CHF_BOX[bdrybox],
+     &     CHF_CONST_FRA1[f_rflct],
+     &     CHF_CONST_R1D[arr_v],
+     &     CHF_CONST_FRA1[vn],
+     &     CHF_CONST_FRA1[phi],
+     &     CHF_CONST_REAL[mass],
+     &     CHF_CONST_real[charge],
+     &     CHF_CONST_INT[iside]
+     &     )
+c
+c     This function is designed specifically for uw3 advection scheme.
+c     It does explicitly make use of the coefficients of the uw3 advection scheme
+c     In the present realization, it is implemented for y-boundaries only, i.e. y=0 and y=y_max
+c     with jbdry = -1 and jbdry = N, for the computational box (0:N-1) in y-direction
+
+
+c
+c     local variables
+c
+      integer i,j,k,l,m,shift, ind_v
+      integer i_x, i_y, i_v, i_mu
+      integer isign
+      integer vn_jbdry, phi_jbdry
+      integer jbdry,jsrc,jsrc_offset
+      integer n_k, ibdryboxlo2_m, ibdryboxhi2_m, k_pos, k_esc
+      REAL_T pot_energy, f_face, xi
+      REAL_T v_esc, v_center, v_lo, v_hi
+      REAL_T total_weight, current_weight, tmp_val, factor
+      REAL_T neg_setup, direction, deriv, f_m1, f_m2, f_0, kin_energy
+      REAL_T, allocatable :: weights(:)
+c     +1 because Fortran gets the last index for iarr_vi0 that is N-1
+      shift = (iarr_vhi0+1)/2
+c
+c     First construct jbdry, the index of the first cell just inside the boundary box.
+c
+
+      if (iside.eq.0) then
+        jbdry = CHF_UBOUND[bdrybox;1]
+      else
+        jbdry = CHF_LBOUND[bdrybox;1]
+      endif
+c     isign = -1 for lower boundary, i.e. j=0 and +1 for upper boundary, i.e. j=64 or whatever
+      isign = 2*iside-1
+      jsrc_offset = 2 * jbdry - isign
+      
+c
+#if CH_SPACEDIM==4
+c     vn_jboundary is the index for normal velocity: jbdr = -1, isign = -1, iside = 0 => vn_jbdry = 0 for lower and
+c     jbdr = 64, isign = 1, iside = 1 => vn_jbdry = 64 for upper boundar
+c     64 is just a randomg number for expample, it is box_v + 1
+c     since 64 is technically out of (0:63), we need to rethink and make sure everything is Ok here   
+      vn_jbdry = jbdry - isign + iside
+      
+c     Extend boundaries of the box in k-direction by 1 in all directions
+      ibdryboxlo2_m = ibdryboxlo2 - 1
+      ibdryboxhi2_m = ibdryboxhi2 + 1
+c     +1 because an array of 4 elelments is given as 0..3, thus 3-0=3 not 4
+      n_k = ibdryboxhi2_m - ibdryboxlo2_m + 1
+c     This is protection just in case we never find k_esc
+      k_esc = -1
+c     Allocate an array for weights
+
+
+c     Allocate one element to the right and one to the left, do not forget to shift properly 
+      allocate(weights(n_k+2))
+      
+c     Do the first loop to find all weights
+      do k = ibdryboxlo2_m,ibdryboxhi2_m
+c       +1 shift due to fortran and another +1 shift due to extra 2 in allocation	    
+        k_pos = k-ibdryboxlo2_m+1+1
+        weights(k_pos) = 1.000d0
+        if (isign*vn(ibdryboxlo0, vn_jbdry, ibdryboxlo2, ibdryboxlo3).le.zero) then
+            phi_jbdry = jbdry - isign
+            pot_energy = -charge * phi(ibdryboxlo0, phi_jbdry, CHF_LBOUND[phi;2], CHF_LBOUND[phi;3])
+            ind_v = k + shift
+            v_center = arr_v(ind_v)
+c            Find v_upper and v_mim, which are different depending on the sign of the velocity
+c            for low k v goes from -V_max to 0, for hight k v goes from 0 to V_max
+c            Indices from -24 to -1 are for v<0, and from 0 to 23 for v>0
+c            v-array is cell centered
+            if( v_center**2 .le. arr_v(ind_v+1)*arr_v(ind_v+1) ) then
+               v_hi = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+            else
+               v_hi = (arr_v(ind_v-1) + arr_v(ind_v)) / 2.000d0
+               v_lo = (arr_v(ind_v+1) + arr_v(ind_v)) / 2.000d0
+            endif
+            kin_energy = mass*v_lo*v_lo / 2.000d0
+            if (kin_energy.gt.pot_energy) then
+               weights(k_pos) = 0.000d0
+             else
+               kin_energy = half*mass*v_hi*v_hi
+               if (kin_energy.ge.pot_energy) then
+                 v_esc = sqrt(abs(two*pot_energy/mass))*sign(one,v_center)
+                 weights(k_pos) = (v_esc - v_lo) / (v_hi - v_lo) * (v_esc + v_lo) / (v_lo + v_hi)
+                 k_esc = k_pos
+               endif
+            endif
+        endif
+      enddo
+
+c      Check if we ever found v_esc
+       if (k_esc.ge.0) then
+c      Now weights(k_esc) is our \xi and direction of velocity is given by sign
+        xi = weights(k_esc)
+        weights(k_esc+isign) = 7.000d0/8.000d0 + xi/8.000d0
+        weights(k_esc-isign) = xi/8.000d0
+        weights(k_esc) = 1.000d0/8.000d0 + xi*6.000d0/8.000d0
+      endif
+
+      do l = ibdryboxlo3,ibdryboxhi3
+      do k = ibdryboxlo2,ibdryboxhi2
+      do i = ibdryboxlo0,ibdryboxhi0
+        f_face = ( 13.000d0*f_rflct(i,jbdry-isign,-k-1,l) - 13.000d0*f_rflct(i,jbdry-2*isign,-k-1,l)
+     & + 8.000d0*f_rflct(i,jbdry-3*isign,-k-1,l) - 2.000d0*f_rflct(i,jbdry-4*isign,-k-1,l) ) / 6.000d0
+      if (isign*vn(i,vn_jbdry,k,l).le.zero) then
+             f_face = f_face*weights(k-ibdryboxlo2_m+1+1)
+             f(i,jbdry,k,l) = ( 6.000d0*f_face - 5.000d0*f(i,jbdry-isign,k,l) + f(i,jbdry-2*isign,k,l) ) / 2.000d0
+             f(i,jbdry+isign,k,l) = ( 18.000d0*f_face - 21.000d0*f(i,jbdry-isign,k,l) + 5.000d0*f(i,jbdry-2*isign,k,l) ) / 2.000d0
+           endif
+      enddo
+      enddo
+      enddo
+      
+#else
+
+c     THIS SUBROUTINE IS JUST WRONG NOW, IT WAS COPY-PASTED FROM THE PREVIOUS CODE
+      CHF_MULTIDO[bdrybox;i;j;k;l;m]
+
+          vn_jbdry = jbdry - isign + iside
+          if (isign*vn(i,vn_jbdry,k,l,m).le.zero) then
+
+c            Inflow from limiter: construct f by reflection if below potential boundary
+c            or set f = 0 otherwise
+             
+             phi_jbdry = jbdry - isign
+             pot_energy_min = -charge * phi(i,phi_jbdry,k,CHF_LBOUND[phi;2],CHF_LBOUND[phi;3])
+
+             vel_center = vel(i,jbdry,k,l,m,0)
+             if( (vel_center**2) .le. (vel(i,jbdry,k,l+1,m,0)**2) ) then
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             else
+                vel_lower = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l+1,m,0))
+                vel_upper = half*(vel(i,jbdry,k,l,m,0) + vel(i,jbdry,k,l-1,m,0))
+             endif
+
+             if (half * mass * (vel_center**2).gt.pot_energy_min) then
+               f(i,j,k,l,m) = zero
+             else
+               jsrc = jsrc_offset - j
+               f(i,j,k,l,m) = f_rflct(i,jsrc,k,-l-1,m)
+               if (half*mass*(vel_upper**2).gt.pot_energy_min) then
+                 vel_esc = sqrt(abs(two*pot_energy_min/mass))*sign(one,vel_center)
+                 f(i,j,k,l,m) = f(i,j,k,l,m)*(vel_esc-vel_lower)/(vel_upper-vel_lower)
+               endif
+             endif
+          
+          endif
+      CHF_ENDDO
+#endif
+
+      deallocate(weights)
       return
       end

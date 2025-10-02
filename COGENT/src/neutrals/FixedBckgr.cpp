@@ -8,6 +8,7 @@
 #include "NeutralsF_F.H"
 #include "KineticFunctionLibrary.H"
 #include "ConstFact.H"
+#include "MomentOp.H"
 #include "Kernels.H"
 #include "inspect.H"
 
@@ -19,7 +20,8 @@ FixedBckgr::FixedBckgr( ParmParse& a_ppntr, const int a_verbosity )
      m_fixed_source_dfn(false),
      m_neutr_vel(NULL),
      m_neutr_temp(NULL),
-     m_first_call_tscale(true)
+     m_first_call_tscale(true),
+     m_diagnostics(false)
 {
    parseParameters( a_ppntr );
 
@@ -76,10 +78,32 @@ void FixedBckgr::evalNtrRHS(KineticSpecies&                   a_rhs_species,
       }
       phase_geom.injectConfigurationToPhase( m_neutral_density_cfg, m_neutral_density);
 
-      CFG::LevelData<CFG::FArrayBox> ionization_rate( mag_geom.grids(), 1, CFG::IntVect::Zero );
-      m_ioniz_rate->assign( ionization_rate, mag_geom, a_time);
-      phase_geom.injectConfigurationToPhase( ionization_rate, m_ionization_rate);
+      if (m_fixed_source_dfn) {
+         KineticSpeciesPtr ref_species( soln_species.clone( IntVect::Unit, false ) );
+         m_ref_func->assign( *ref_species, a_time );
+         LevelData<FArrayBox>& neutr_dfn( ref_species->distributionFunction() );
+         phase_geom.divideJonValid(neutr_dfn);
+         m_ref_dfn.define(neutr_dfn);
+      }
+      
+      if (m_compute_sigmaV) {
+         // Get electron temeprature
+         CFG::LevelData<CFG::FArrayBox> Te_cfg(mag_geom.grids(), 1, CFG::IntVect::Zero);
+         m_electron_temp->assign( Te_cfg, mag_geom, a_time);
 
+         // Get ionization reaction coefficient (sigmaV)
+         CFG::LevelData<CFG::FArrayBox> ionization_sigmaV( mag_geom.grids(), 1, CFG::IntVect::Zero );
+         computeIonizationSigmaV(ionization_sigmaV, Te_cfg, a_time);
+
+         phase_geom.injectConfigurationToPhase( ionization_sigmaV, m_ionization_sigmaV);
+      }
+
+      else {
+        CFG::LevelData<CFG::FArrayBox> ionization_rate( mag_geom.grids(), 1, CFG::IntVect::Zero );
+        m_ioniz_rate->assign( ionization_rate, mag_geom, a_time);
+        phase_geom.injectConfigurationToPhase( ionization_rate, m_ionization_rate);
+      }
+      
       if (m_include_chx) {
          m_neutral_velocity_cfg.define( mag_geom.grids(), 1, CFG::IntVect::Zero );
          m_neutr_vel->assign( m_neutral_velocity_cfg, mag_geom, a_time);
@@ -110,15 +134,12 @@ void FixedBckgr::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    LevelData<FArrayBox> ionization_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
 
    if (m_fixed_source_dfn) {
-      KineticSpeciesPtr ref_species( soln_species.clone( IntVect::Unit, false ) );
-      m_neutr_func->assign( *ref_species, a_time );
-      LevelData<FArrayBox>& neutr_dfn( ref_species->distributionFunction() );
-      phase_geom.divideJonValid(neutr_dfn);    
-      computeIonizationRHS( ionization_rhs, neutr_dfn, m_neutral_density );
-    }   
-    else
-      computeIonizationRHS( ionization_rhs,  soln_dfn, m_neutral_density );
-
+      computeIonizationRHS( ionization_rhs, m_ref_dfn, m_neutral_density );
+    }
+   else {
+     computeIonizationRHS( ionization_rhs,  soln_dfn, m_neutral_density );
+   }
+  
    //Calculate charge-exchange RHS
    LevelData<FArrayBox> chx_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
    if (m_include_chx) {
@@ -190,12 +211,23 @@ void FixedBckgr::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    LevelData<FArrayBox>& rhs_dfn( a_rhs_species.distributionFunction() );
    for (DataIterator rdit(soln_dfn.dataIterator()); rdit.ok(); ++rdit) {
        rhs_dfn[rdit].plus( ionization_rhs[rdit] );
-//       rhs_dfn[rdit].copy( ionization_rhs[rdit] ); // debug check to see effect of ionization term alone
        if (m_include_chx) {
           rhs_dfn[rdit].plus( chx_rhs[rdit] );
        }
-   }  
-
+   }
+   
+   // Diagnostics
+   if (m_first_call && m_diagnostics) {
+     LevelData<FArrayBox> src(rhs_dfn.getBoxes(),1,IntVect::Zero);
+     for (DataIterator dit(src.dataIterator()); dit.ok(); ++dit) {
+       src[dit].copy(ionization_rhs[dit]);
+        if (m_include_chx)  {
+           src[dit].plus(ionization_rhs[dit]);
+        }
+     }
+     diagnostics(src, a_rhs_species, a_time);
+   }
+   
    m_first_call = false;
 }
 
@@ -207,13 +239,23 @@ void FixedBckgr::computeIonizationRHS( LevelData<FArrayBox>& a_rhs,
 {
    for (DataIterator dit( a_rhs.dataIterator() ); dit.ok(); ++dit) {
 
-      FORT_COMPUTE_IONIZATION(CHF_BOX(a_rhs[dit].box()),
-                              CHF_FRA1(a_rhs[dit],0),
-                              CHF_CONST_FRA1(a_soln_dfn[dit],0),
-                              CHF_CONST_FRA1(a_neutral_density[dit],0),
-                              CHF_CONST_FRA1(m_ionization_rate[dit],0));
-      
-      a_rhs[dit].mult(m_ionization_norm);
+      if (!m_compute_sigmaV) {
+         FORT_COMPUTE_IONIZATION(CHF_BOX(a_rhs[dit].box()),
+                                 CHF_FRA1(a_rhs[dit],0),
+                                 CHF_CONST_FRA1(a_soln_dfn[dit],0),
+                                 CHF_CONST_FRA1(a_neutral_density[dit],0),
+                                 CHF_CONST_FRA1(m_ionization_rate[dit],0));
+         
+         a_rhs[dit].mult(m_ionization_norm);
+      }
+
+      else {
+         FORT_COMPUTE_IONIZATION(CHF_BOX(a_rhs[dit].box()),
+                                 CHF_FRA1(a_rhs[dit],0),
+                                 CHF_CONST_FRA1(a_soln_dfn[dit],0),
+                                 CHF_CONST_FRA1(a_neutral_density[dit],0),
+                                 CHF_CONST_FRA1(m_ionization_sigmaV[dit],0));
+      }
    }
 }
 
@@ -274,6 +316,51 @@ void FixedBckgr::computeModelChargeExchangeRHS(LevelData<FArrayBox>&       a_rhs
    }
 }
 
+void FixedBckgr::computeIonizationSigmaV(CFG::LevelData<CFG::FArrayBox>&   a_ionization_sigmaV,
+                                         CFG::LevelData<CFG::FArrayBox>&   a_Te_cfg,
+                                         const Real                        a_time) const
+{
+   
+   //Universal constants (in CGS)
+   double mp = 1.6726e-24;
+   
+   //Get normalization parameters (units)
+   double N, T, L;
+   ParmParse ppunits( "units" );
+   ppunits.get("number_density",N);  //[m^{-3}]
+   ppunits.get("temperature",T);     //[eV]
+   ppunits.get("length",L);          //[m]
+   
+   double Tcgs = 1.602e-12 * T; //[erg]
+   double Lcgs  = 1.0e2 * L;   //[cm]
+   
+   double time_norm = Lcgs / sqrt(Tcgs/mp); //[s]
+
+   const CFG::DisjointBoxLayout& grids( a_ionization_sigmaV.getBoxes() );
+   
+   CFG::LevelData<CFG::FArrayBox> a2(grids, 1, CFG::IntVect::Zero);
+   double fac = pow(T/10.0,2);
+   for (CFG::DataIterator dit(grids); dit.ok(); ++dit) {
+      a2[dit].copy(a_Te_cfg[dit]);
+      a2[dit].mult(a_Te_cfg[dit]);
+      a2[dit].mult(fac);
+   }
+   
+   //Get <sigmaV> in m^3/s
+   for (CFG::DataIterator dit(grids); dit.ok(); ++dit) {
+      a_ionization_sigmaV[dit].copy(a2[dit]);
+      a_ionization_sigmaV[dit].plus(3.0);
+      a_ionization_sigmaV[dit].divide(a2[dit]);
+      a_ionization_sigmaV[dit].invert(1.0);
+      a_ionization_sigmaV[dit].mult(3.0e-14);
+   }
+   
+   //Perform <sigmaV> normalization
+   double norm = time_norm * N;
+   for (CFG::DataIterator dit(grids); dit.ok(); ++dit) {
+      a_ionization_sigmaV[dit].mult(norm);
+   }
+}
 
 void FixedBckgr::computeChxNormalization(double&       a_ioniz_norm,
                                          double&       a_chx_norm,
@@ -346,11 +433,15 @@ void FixedBckgr::parseParameters( ParmParse& a_ppntr )
       m_SI_input = false;
    }
 
+   m_compute_sigmaV = false;
+   a_ppntr.query( "compute_sigmaV", m_compute_sigmaV);
+   
+   
    KineticFunctionLibrary* library = KineticFunctionLibrary::getInstance();
    std::string function_name;
    if (a_ppntr.contains("neutral_phase_func")) {
        a_ppntr.get( "neutral_phase_func", function_name );
-       m_neutr_func = library->find( function_name );
+       m_ref_func = library->find( function_name );
        m_fixed_source_dfn = true;
    }
    
@@ -366,13 +457,28 @@ void FixedBckgr::parseParameters( ParmParse& a_ppntr )
    }
 
    if (a_ppntr.contains("ionization_rate")) {
+      if (m_compute_sigmaV) {
+         MayDay::Error("FixedBckg:: cannot set ionization_rate when compute_sigmaV = true ");
+      }
       a_ppntr.get( "ionization_rate", grid_function_name );
       m_ioniz_rate = grid_library->find( grid_function_name );
    }
    else{
-      MayDay::Error("FixedBckg:: ionization rate must be specified ");
+      if (!m_compute_sigmaV) {
+         MayDay::Error("FixedBckg:: need to set ionization_rate when compute_sigmaV = false ");
+      }
    }
 
+   if (m_compute_sigmaV) {
+      if (a_ppntr.contains("electron_temperature")) {
+         a_ppntr.get( "electron_temperature", grid_function_name );
+         m_electron_temp = grid_library->find( grid_function_name );
+      }
+      else{
+         MayDay::Warning("fixedBckg:: electron temperature must be speciefied to compute ionization rate");
+      }
+   }
+   
    if (m_include_chx) {
    
       if (a_ppntr.contains("parallel_velocity")) {
@@ -393,6 +499,7 @@ void FixedBckgr::parseParameters( ParmParse& a_ppntr )
       }
    }
   
+  a_ppntr.query( "plot_src_data", m_diagnostics );
 }
 
 
@@ -464,18 +571,92 @@ void FixedBckgr::diagnostics(const LevelData<FArrayBox>& a_rhs,
                              const KineticSpecies&       a_rhs_species,
                              const double                a_time) const
 {
+  bool diagnostics_SI_units = true;
+  
+  //Universal constants (in CGS)
+  double mp = 1.6726e-24;
+  
+  //Get normalization parameters (units)
+  double N, T, L;
+  ParmParse ppunits( "units" );
+  ppunits.get("number_density",N);  //[m^{-3}]
+  ppunits.get("temperature",T);     //[eV]
+  ppunits.get("length",L);          //[m]
+  
+  double Tcgs = 1.602e-12 * T; //[erg]
+  double Lcgs  = 1.0e2 * L;   //[cm]
+  
+  double time_norm = Lcgs / sqrt(Tcgs/mp); //[s]
 
-  //Get geometry                                                                                                                                                            
+  //Get geometry
   const PhaseGeom& phase_geom = a_rhs_species.phaseSpaceGeometry();
-  const CFG::MultiBlockLevelGeom& mag_geom( phase_geom.magGeom() );
+  const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
+  
 
-  //Plot particle source
-  CFG::LevelData<CFG::FArrayBox> particle_src( mag_geom.grids(), 1, CFG::IntVect::Zero );                                                                                 
-  a_rhs_species.numberDensity( particle_src );                                                                                                                              
-  phase_geom.plotConfigurationData( "particle_src", particle_src, a_time );                                                                                                 
+  // Plot electron temeprature
+  CFG::LevelData<CFG::FArrayBox> Te_cfg(mag_geom.grids(), 1, CFG::IntVect::Zero);
+  m_electron_temp->assign( Te_cfg, mag_geom, a_time);
+  if (diagnostics_SI_units) {
+    // output Te[eV]
+    double norm = T;
+    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      Te_cfg[dit].mult(norm);
+    }
+  }
+  phase_geom.plotConfigurationData( "electron_temperature", Te_cfg, a_time );
+
+  
+  // Plot ionization sigmaV
+  CFG::LevelData<CFG::FArrayBox> ionization_sigmaV(mag_geom.grids(), 1, CFG::IntVect::Zero);
+  phase_geom.projectPhaseToConfiguration( m_ionization_sigmaV, ionization_sigmaV);
+  if (diagnostics_SI_units) {
+    // output sigmaV[m^3/s]
+    double norm = 1.0/(time_norm * N);
+    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      ionization_sigmaV[dit].mult(norm);
+    }
+  }
+  phase_geom.plotConfigurationData( "ionization_sigmaV", ionization_sigmaV, a_time );
+  
+  // Plot neutral density
+  CFG::LevelData<CFG::FArrayBox> neutral_density;
+  neutral_density.define(m_neutral_density_cfg);
+  if (diagnostics_SI_units) {
+    //output density[m^{-3}]
+    double norm = N;
+    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      neutral_density[dit].mult(norm);
+    }
+  }
+  phase_geom.plotConfigurationData( "neutral_density", neutral_density, a_time );
+
+  //Get moment operator
+  MomentOp& moment_op = MomentOp::instance();
+  
+  // Plot particle source
+  CFG::LevelData<CFG::FArrayBox> particle_src( mag_geom.grids(), 1, CFG::IntVect::Zero );
+  moment_op.compute(particle_src, a_rhs_species, a_rhs, DensityKernel<FArrayBox>());
+  mag_geom.divideJonValid(particle_src);
+  if (diagnostics_SI_units) {
+    //output particle source [m^{-3}/s]
+    double norm = N/time_norm;
+    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      particle_src[dit].mult(norm);
+    }
+  }
+  phase_geom.plotConfigurationData( "particle_src", particle_src, a_time );
+   
   //Plot parallel particle flux (nVpar) source
   CFG::LevelData<CFG::FArrayBox> parMom_src( mag_geom.grids(), 1, CFG::IntVect::Zero );
-  a_rhs_species.parallelParticleFlux( parMom_src );
+  moment_op.compute(parMom_src, a_rhs_species, a_rhs, ParallelVelKernel<FArrayBox>());
+  mag_geom.divideJonValid(parMom_src);
+  if (diagnostics_SI_units) {
+    //output parallel particle flux source [m^{-2}/s^2]
+    double norm = N/time_norm * (sqrt(Tcgs/mp)/100.0);
+    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      parMom_src[dit].mult(norm);
+    }
+  }
   phase_geom.plotConfigurationData( "parMom_src", parMom_src, a_time );
 
 }

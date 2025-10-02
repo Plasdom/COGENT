@@ -56,14 +56,15 @@ EllipticOp::init( const ParmParse& a_pp )
    const DisjointBoxLayout& grids = m_geometry.grids();
 
    // Check minimum box size.  Needed for boundary extrapolation.
-   for (DataIterator dit(grids); dit.ok(); ++dit) {
+   // CG: Remove it for test purposes in 1D
+   /*for (DataIterator dit(grids); dit.ok(); ++dit) {
       for (int dir=0; dir<SpaceDim; dir++) {
          if(grids[dit].size(dir) < 3) {
             MayDay::Error( "Poisson: Minimum box dimension is 3!" );
          }
       }
    }
-
+   */
    if (m_second_order) {
       m_num_potential_ghosts = 2;
    }

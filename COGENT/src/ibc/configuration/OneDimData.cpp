@@ -14,6 +14,7 @@ using namespace std;
 #include "SingleNullBlockCoordSys.H"
 #include "SNCoreBlockCoordSysModel.H"
 #include "SingleNullBlockCoordSysModel.H"
+#include "OneBlockCoordSys.H"
 
 #include "NamespaceHeader.H"
 
@@ -116,6 +117,8 @@ void OneDimData::setPointwise(FArrayBox&                 a_data,
          
          if (typeid(coord_sys) == typeid(SNCoreBlockCoordSysModel))  coord = ((const SNCoreBlockCoordSysModel&)coord_sys).getNormMagneticFlux(phys_coordinate);
          if (typeid(coord_sys) == typeid(SingleNullBlockCoordSysModel))  coord = ((const SingleNullBlockCoordSysModel&)coord_sys).getNormMagneticFlux(phys_coordinate);
+
+	 if (typeid(coord_sys) == typeid(OneBlockCoordSys))  coord = ((const OneBlockCoordSys&)coord_sys).getNormMagneticFlux(phys_coordinate);
       }
       
       if (m_coord_type == "outer_midplane") {

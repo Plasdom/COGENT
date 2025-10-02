@@ -180,7 +180,7 @@ void TwoFieldNeutralsOp::accumulateRHS(FluidSpeciesPtrVect&               a_rhs,
                                        const Real                         a_time)
 {
    // Get prescribed plasma parameters
-   getPlasmaParameters(a_time);
+   getPlasmaParameters(a_time, a_kinetic_species_phys);
    
    // Get atomic rates
    computeAtomicRates(m_ionization_rate, m_recombination_rate, m_chx_rate, a_time);
@@ -1363,11 +1363,11 @@ void TwoFieldNeutralsOp::fillGhostCells(FluidSpecies&  a_species_phys,
    }
 }
 
-void TwoFieldNeutralsOp::getPlasmaParameters(const Real a_time)
+void TwoFieldNeutralsOp::getPlasmaParameters(const Real a_time, const PS::KineticSpeciesPtrVect&   a_kinetic_species_phys)
 {
    // Get prescribed electron density (m_ne)
    // electron temperature (m_Te) and neutrals temperature (m_Tg)
-   OneFieldNeutralsOp::getPlasmaParameters(a_time);
+   OneFieldNeutralsOp::getPlasmaParameters(a_time, a_kinetic_species_phys);
    
    const DisjointBoxLayout& grids = m_geometry.grids();
    

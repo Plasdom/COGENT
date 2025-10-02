@@ -4580,7 +4580,7 @@ PhaseGeom::plotAtConfigurationIndex( const string               a_file_name,
                                      const LevelData<FluxBox>&  a_data,
                                      const double&              a_time ) const
 {
-   CH_assert( validConfigurationIndex(cspace_index) );
+   // VG: remove to run 1D: CH_assert( validConfigurationIndex(cspace_index) );
 
    // Since the passed data is a LevelData<FluxBox>, we average the face
    // values to cell centers
@@ -4623,7 +4623,7 @@ PhaseGeom::plotAtConfigurationIndex( const string                 a_file_name,
                                      const LevelData<FArrayBox>&  a_data,
                                      const double&                a_time ) const
 {
-   CH_assert( validConfigurationIndex(cspace_index) );
+   // VG: remove to run 1D: CH_assert( validConfigurationIndex(cspace_index) );
 
    // Evaluate data at the specified configuration space index.
    VEL::LevelData<VEL::FArrayBox> data_at_cpt;
@@ -4637,7 +4637,8 @@ PhaseGeom::plotAtConfigurationIndex( const string                 a_file_name,
 void
 PhaseGeom::plotConfigurationData( const string                           a_file_name,
                                   const CFG::LevelData<CFG::FArrayBox>&  a_data,
-                                  const double&                          a_time ) const
+                                  const double&                          a_time,// ) const VG
+                                  bool                                   a_plot_mapping ) const
 {
    m_mag_geom->plotCellData(a_file_name, a_data, a_time);
 }
@@ -4757,7 +4758,8 @@ PhaseGeom::plotAtMuIndex( const string                 a_file_name,
 void
 PhaseGeom::plotConfigurationData( const string                         a_file_name,
                                   const CFG::LevelData<CFG::FluxBox>&  a_data,
-                                  const double&                        a_time ) const
+                                  const double&                        a_time, // ) const VG 
+                                  bool                                 a_plot_mapping ) const
 {
    const CFG::DisjointBoxLayout& grids = a_data.disjointBoxLayout();
 
@@ -4913,11 +4915,12 @@ PhaseGeom::plotDivergence( const string&             a_file_name,
 void
 PhaseGeom::plotData( const string&                a_file_name,
                      const LevelData<FArrayBox>&  a_data,
-                     const double&                a_time ) const
+                     const double&                a_time,// ) const VG
+                     bool                         a_plot_mapping ) const
 {
    Box domain_box = m_domain.domainBox();
    domain_box.grow(a_data.ghostVect());
-   WriteMappedUGHDF5(a_file_name, m_gridsFull, a_data, *m_phase_coords, domain_box, a_time);
+   WriteMappedUGHDF5(a_file_name, m_gridsFull, a_data, *m_phase_coords, domain_box, a_time, a_plot_mapping);
 }
 
 

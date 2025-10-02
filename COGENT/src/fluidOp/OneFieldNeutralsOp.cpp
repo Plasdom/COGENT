@@ -131,7 +131,7 @@ void OneFieldNeutralsOp::accumulateRHS(FluidSpeciesPtrVect&               a_rhs,
 
    // Get electron density (n_e), temperature (T_e)
    // and neutral temperature (T_g)
-   getPlasmaParameters(a_time);
+   getPlasmaParameters(a_time, a_kinetic_species_phys);
    
    // Compute diffusion coefficient
    LevelData<FluxBox> D_tensor(grids, SpaceDim*SpaceDim, 2*IntVect::Unit);
@@ -651,7 +651,7 @@ void OneFieldNeutralsOp::computeDiffusionCoefficients(LevelData<FluxBox>& a_D_te
    }
 }
 
-void OneFieldNeutralsOp::getPlasmaParameters(const Real a_time)
+void OneFieldNeutralsOp::getPlasmaParameters(const Real a_time, const PS::KineticSpeciesPtrVect&   a_kinetic_species_phys)
 {
    const DisjointBoxLayout& grids = m_geometry.grids();
    
@@ -664,7 +664,25 @@ void OneFieldNeutralsOp::getPlasmaParameters(const Real a_time)
       m_ne_func->assign( m_ne, m_geometry, a_time);
    }
    
-   if (m_Te_func != NULL && m_first_call) {
+   if (m_use_Te_in_rate_calculation)
+   {
+      if (m_first_call)
+      {
+         // Identify the electron KineticSpecies in the a_kinetic_species_phys input argument
+         {
+            for (int species(0); species<a_kinetic_species_phys.size(); species++) {
+               int species_charge = (*(a_kinetic_species_phys[species])).charge();
+               if (species_charge == -1)
+               {
+                  electron_species_index = species;
+               }
+            }
+         }
+      }
+      // Calculate the electron temperature (in eV) from the electron distribution
+      (*(a_kinetic_species_phys[electron_species_index])).temperature(m_Te);
+   }
+   else if (m_Te_func != NULL && m_first_call) {
       m_Te_func->assign( m_Te, m_geometry, a_time);
    }
 
@@ -914,7 +932,10 @@ void OneFieldNeutralsOp::parseParameters( ParmParse& a_pp )
      m_fixed_source_func = grid_library->find( grid_function_name );
    }
 
-   if (a_pp.contains("electron_temperature")) {
+   if (a_pp.contains("use_Te_in_rate_calculation")) {
+      a_pp.get( "use_Te_in_rate_calculation", m_use_Te_in_rate_calculation );
+   }
+   else if (a_pp.contains("electron_temperature")) {
       a_pp.get( "electron_temperature", grid_function_name );
       m_Te_func = grid_library->find( grid_function_name );
    }
@@ -950,7 +971,7 @@ void OneFieldNeutralsOp::parseParameters( ParmParse& a_pp )
    
    //Check input for consistency
    if (m_include_ionization) {
-      if (m_Te_func == NULL) {
+      if ((m_use_Te_in_rate_calculation == false) && (m_Te_func == NULL)) {
          MayDay::Error("Electron temperature must be specified to compute ionization");
       }
       

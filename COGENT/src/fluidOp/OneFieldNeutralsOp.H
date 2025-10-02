@@ -157,7 +157,7 @@ public:
    
 protected:
    
-   virtual void getPlasmaParameters(const Real time);
+   virtual void getPlasmaParameters(const Real time, const PS::KineticSpeciesPtrVect&   a_kinetic_species_phys);
    
    void computeDiffusionWithRecyclingBC(LevelData<FArrayBox>&        out,
                                         FluidVarBC&                  recycl_var_bc,
@@ -249,11 +249,14 @@ private:
    
    int m_verbosity;
 
+   int electron_species_index;
+
    bool m_uedge_chx;
    bool m_dens_recycling_bc;
    bool m_is_time_implicit;
    bool m_first_call;
    bool m_include_ionization;
+   bool m_use_Te_in_rate_calculation;
    
    std::string m_opt_string;
    int m_my_pc_idx;

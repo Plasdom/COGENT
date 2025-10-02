@@ -86,9 +86,57 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
       double dens_norm, vel_norm, temp_norm;
       computeChxNormalization(m_ionization_norm, m_chx_norm, dens_norm, vel_norm, temp_norm, m_SI_input);
       
-      // Get electron temeprature
+      // Get electron temperature
       m_Te_cfg.define(mag_geom.grids(), 1, CFG::IntVect::Zero);
-      m_electron_temp->assign( m_Te_cfg, mag_geom, a_time);
+      if (m_use_Te_in_rate_calculation || m_include_iz_energy_loss)
+      {
+         // Identify the electron KineticSpecies in the a_soln input argument
+         {
+            for (int species(0); species<a_soln.size(); species++) {
+               int species_charge = (*(a_soln[species])).charge();
+               if (species_charge == -1)
+               {
+                  electron_species_index = species;
+               }
+            }
+         }
+
+         // Calculate the electron temperature (in eV) from the electron distribution
+         (*(a_soln[electron_species_index])).temperature(m_Te_cfg);
+      }
+      else 
+      {
+         // Use the prescribed value from the input file
+         m_electron_temp->assign( m_Te_cfg, mag_geom, a_time);
+      }
+
+      // Create the source distribution for ionization which accounts for energy loss of colliding particles (Maxwellian at Tiz, ne)
+      if (m_include_iz_energy_loss)
+      {
+         m_iz_source_maxw.define( phase_geom.gridsFull(), 1, IntVect::Zero );
+         m_iz_source_dfn.define( phase_geom.gridsFull(), 1, IntVect::Zero );
+         CFG::LevelData<CFG::FArrayBox> iz_source_velocity_cfg( mag_geom.grids(), 1, CFG::IntVect::Zero );
+         for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+            iz_source_velocity_cfg[dit].setVal(0.);
+         }
+         double T_norm;
+         ParmParse ppunits( "units" );
+         ppunits.get("temperature",T_norm);     //[eV]
+         m_iz_source_temperature_cfg.define( mag_geom.grids(), 1, CFG::IntVect::Zero );
+         for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+            m_iz_source_temperature_cfg[dit].copy(m_Te_cfg[dit]);
+            m_iz_source_temperature_cfg[dit].divide(2.0);
+            m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
+         }
+         m_iz_source_density_cfg.define( mag_geom.grids(), 1, CFG::IntVect::Zero );
+         for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+            m_iz_source_density_cfg[dit].setVal(1.0);
+         }
+         // soln_species.numberDensity( m_electron_density_cfg );
+
+         MaxwellianKernel<FArrayBox> maxwellian(m_iz_source_density_cfg, m_iz_source_temperature_cfg, iz_source_velocity_cfg);
+         maxwellian.eval(m_iz_source_maxw,soln_species);
+      }
 
       // Get ionization reaction coefficient (sigmaV)
       CFG::LevelData<CFG::FArrayBox> ionization_sigmaV( mag_geom.grids(), 1, CFG::IntVect::Zero );
@@ -138,13 +186,28 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
   
  
    //Calculate ionization RHS
-   LevelData<FArrayBox> ionization_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
-   if (m_neutr_temp== NULL) {
-      computeIonizationRHS( ionization_rhs,  soln_dfn, neutral_density_inj );
+   if (m_use_Te_in_rate_calculation)
+   {
+      (*(a_soln[electron_species_index])).temperature(m_Te_cfg);
+      CFG::LevelData<CFG::FArrayBox> ionization_sigmaV( mag_geom.grids(), 1, CFG::IntVect::Zero );
+      computeIonizationSigmaV(ionization_sigmaV, a_time);
+      phase_geom.injectConfigurationToPhase( ionization_sigmaV, m_ionization_sigmaV);
    }
-   else {
-      updateNeutralDfn(soln_species);
-      computeIonizationRHS( ionization_rhs,  m_neutral_dfn, neutral_density_inj );
+   LevelData<FArrayBox> ionization_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
+   if (m_include_iz_energy_loss)
+   {
+      updateIzSourceDfn(soln_species);
+      computeIonizationWithEnLossRHS( ionization_rhs, m_iz_source_dfn, soln_dfn, neutral_density_inj );
+   }
+   else 
+   {
+      if (m_neutr_temp== NULL) {
+         computeIonizationRHS( ionization_rhs,  soln_dfn, neutral_density_inj );
+      }
+      else {
+         updateNeutralDfn(soln_species);
+         computeIonizationRHS( ionization_rhs,  m_neutral_dfn, neutral_density_inj );
+      }
    }
    
    //Calculate charge-exchange RHS
@@ -237,6 +300,41 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    m_first_call = false;
 }
 
+void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
+{
+   double T_norm;
+   ParmParse ppunits( "units" );
+   ppunits.get("temperature",T_norm);     //[eV]
+
+   const PhaseGeom& phase_geom = a_species.phaseSpaceGeometry();
+   const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
+   
+   CFG::LevelData<CFG::FArrayBox> iz_source_velocity_cfg( mag_geom.grids(), 1, CFG::IntVect::Zero );
+   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      iz_source_velocity_cfg[dit].setVal(0.);
+   }
+   (a_species).temperature(m_Te_cfg);
+   // (a_species).numberDensity(m_electron_density_cfg);
+   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      m_iz_source_temperature_cfg[dit].copy(m_Te_cfg[dit]);
+      m_iz_source_temperature_cfg[dit].divide(2.0);
+      m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
+   }
+   MaxwellianKernel<FArrayBox> maxwellian(m_iz_source_density_cfg, m_iz_source_temperature_cfg, iz_source_velocity_cfg);
+   maxwellian.eval(m_iz_source_maxw,a_species);
+
+   CFG::LevelData<CFG::FArrayBox> ne(mag_geom.grids(), 1, CFG::IntVect::Zero);
+   a_species.numberDensity( ne );
+   phase_geom.injectConfigurationToPhase(ne, m_ne_inj);
+   
+   for (DataIterator dit( m_iz_source_dfn.dataIterator() ); dit.ok(); ++dit) {
+      
+      FORT_MULT_NI(CHF_BOX(m_iz_source_dfn[dit].box()),
+                   CHF_FRA1(m_iz_source_dfn[dit],0),
+                   CHF_CONST_FRA1(m_iz_source_maxw[dit],0),
+                   CHF_CONST_FRA1(m_ne_inj[dit],0));
+   }
+}
 
 
 void FluidNeutrals::computeIonizationRHS(LevelData<FArrayBox>& a_rhs,
@@ -247,6 +345,22 @@ void FluidNeutrals::computeIonizationRHS(LevelData<FArrayBox>& a_rhs,
 
       FORT_COMPUTE_IONIZATION(CHF_BOX(a_rhs[dit].box()),
                               CHF_FRA1(a_rhs[dit],0),
+                              CHF_CONST_FRA1(a_soln_dfn[dit],0),
+                              CHF_CONST_FRA1(a_neutral_density[dit],0),
+                              CHF_CONST_FRA1(m_ionization_sigmaV[dit],0));
+   }
+}
+
+void FluidNeutrals::computeIonizationWithEnLossRHS(LevelData<FArrayBox>& a_rhs,
+                                         const LevelData<FArrayBox>& a_source_dfn,
+                                         const LevelData<FArrayBox>& a_soln_dfn,
+                                         const LevelData<FArrayBox>& a_neutral_density) const
+{
+   for (DataIterator dit( a_rhs.dataIterator() ); dit.ok(); ++dit) {
+
+      FORT_COMPUTE_IONIZATION_ENERGY_LOSS(CHF_BOX(a_rhs[dit].box()),
+                              CHF_FRA1(a_rhs[dit],0),
+                              CHF_CONST_FRA1(a_source_dfn[dit],0),
                               CHF_CONST_FRA1(a_soln_dfn[dit],0),
                               CHF_CONST_FRA1(a_neutral_density[dit],0),
                               CHF_CONST_FRA1(m_ionization_sigmaV[dit],0));
@@ -448,18 +562,37 @@ void FluidNeutrals::parseParameters( ParmParse& a_ppntr )
       m_SI_input = false;
    }
 
+   if (a_ppntr.contains("use_Te_in_rate_calculation")) {
+      a_ppntr.get( "use_Te_in_rate_calculation", m_use_Te_in_rate_calculation );
+   }
+   else 
+   {
+      m_use_Te_in_rate_calculation = false;
+   }
+
+   if (a_ppntr.contains("include_iz_energy_loss")) {
+      a_ppntr.get( "include_iz_energy_loss", m_include_iz_energy_loss );
+   }
+   else 
+   {
+      m_include_iz_energy_loss = false;
+   }
+
    // KineticFunctionLibrary* library = KineticFunctionLibrary::getInstance();
    // std::string function_name;
   
    CFG::GridFunctionLibrary* grid_library = CFG::GridFunctionLibrary::getInstance();
    std::string grid_function_name;
 
-   if (a_ppntr.contains("electron_temperature")) {
-       a_ppntr.get( "electron_temperature", grid_function_name );
-       m_electron_temp = grid_library->find( grid_function_name );
-   }
-   else{
-      MayDay::Warning("FluidNeutrals:: electron temperature must be speciefied to compute ionization rate");
+   if (m_use_Te_in_rate_calculation == false)
+   {
+      if (a_ppntr.contains("electron_temperature")) {
+         a_ppntr.get( "electron_temperature", grid_function_name );
+         m_electron_temp = grid_library->find( grid_function_name );
+      }
+      else{
+            MayDay::Warning("FluidNeutrals:: to compute ionization rate, either specify a prescribed electron temperature or use m_use_Te_in_rate_calculation = true");
+      }
    }
    
    if (a_ppntr.contains("neutral_temperature")) {

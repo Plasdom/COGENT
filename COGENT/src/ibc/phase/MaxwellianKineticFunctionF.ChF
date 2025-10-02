@@ -205,3 +205,104 @@ c
       return
       end
 
+c     This is an experimental subroutine that produces a combination of left- and right- maxwellians
+c     Here, left- is the normal Maxwellian with u=0 n=2n_0 and H(v_\parallel<0), i.e. all zeros in the parallel velocity space for v>0
+c     right-Maxwellian id prepared similarly but H(v_\parallel>0)
+c     It is also assumed that the left-Maxwellian is at y=0, right MAxwellian is at y=2\pi (the maximum lenght in the poloidal direction)
+c     and in between (1/2+z/Ls)*F_L + (1/2-z/Ls)*F_R, for z in [-Ls/2;+Ls/2] and Z/L is y shifted to \pi
+      subroutine set_maxwell4d_RL(
+     &     CHF_FRA[f],
+     &     CHF_BOX[box],
+     &     CHF_CONST_FRA[coords],
+     &     CHF_CONST_FRA1[dens],
+     &     CHF_CONST_FRA1[temp],
+     &     CHF_CONST_FRA1[vshift],
+     &     CHF_CONST_FRA1[b],
+     &     CHF_CONST_REAL[mass],
+
+     &     )
+c     Sets distribution function for 2D temperature and density
+      integer CHF_DDECL[i;j;k;l;m],n
+      integer ivp, imu, iy
+      integer ind_y_min, ind_y_max
+      REAL_T denloc, temploc, vshiftloc, bloc
+      REAL_T vpar, mu, y
+      REAL_T eparnorm, munorm
+      REAL_T factor, val_L, val_R
+      REAL_T minf, maxf
+      REAL_T z, Ls, y_min, y_max, y_mid, dy
+c     Ls = Ls/2/L normalized to Ls = 25/80=0.3125, z=(y-pi)/L  from -1 to 1
+c
+      minf=1.0d30
+      maxf=zero
+c
+      factor = dsqrt(PI*(two/mass)**3)
+c
+      ivp = CHF_NCOMP[coords]-2
+      imu = CHF_NCOMP[coords]-1
+      iy  = CHF_NCOMP[coords]-3
+
+c     This is
+      Ls = 0.3125d0
+      ind_y_min = CHF_LBOUND[dens;1]
+      ind_y_max = CHF_UBOUND[dens;1]
+c      y_min = coords(CHF_IX[0; ind_y_min ;0; 0; 0], iy) BAD INDEXES!!! THERE mightbe no CHF_IX[0; ind_y_min ;0; 0; 0] at zeros, as these out of the box
+c      y_max = coords(CHF_IX[0; ind_y_max ;0; 0; 0], iy)
+c      dy = coords(CHF_IX[0; ind_y_min+1 ;0; 0; 0], iy) - coords(CHF_IX[0; ind_y_min ;0; 0; 0], iy)
+c      y_min = y_min - 0.500d0*dy
+c      y_max = y_max + 0.500d0*dy
+      y_min = 0
+      y_max = 1.000d0
+      y_mid = 0.500d0*(y_min + y_max)
+
+      do n=0,CHF_NCOMP[f]-1
+      CHF_MULTIDO[box;i;j;k;l;m]
+c
+#if CH_SPACEDIM==4
+         vshiftloc = 0.000d0
+c         vshiftloc = vshift(i,j,CHF_LBOUND[temp;2],CHF_LBOUND[temp;3])
+         temploc   = temp(i,j,CHF_LBOUND[temp;2],CHF_LBOUND[temp;3])
+         denloc    = dens(i,j,CHF_LBOUND[dens;2],CHF_LBOUND[dens;3])
+         bloc      = b(i,j,CHF_LBOUND[b;2],CHF_LBOUND[b;3])
+#else
+         vshiftloc = vshift(i,j,k,CHF_LBOUND[temp;3],CHF_LBOUND[temp;4])
+         temploc   = temp(i,j,k,CHF_LBOUND[temp;3],CHF_LBOUND[temp;4])
+         denloc    = dens(i,j,k,CHF_LBOUND[dens;3],CHF_LBOUND[dens;4])
+         bloc      = b(i,j,k,CHF_LBOUND[b;3],CHF_LBOUND[b;4])
+#endif
+c
+         vpar     = coords(CHF_IX[i;j;k;l;m],ivp)
+         mu       = coords(CHF_IX[i;j;k;l;m],imu)
+         y        = coords(CHF_IX[i;j;k;l;m],iy)
+         z        = 2.000d0*(y-y_mid)/(y_max-y_min)
+         eparnorm = half * mass * (vpar-vshiftloc)**2 / temploc
+         munorm   = half * bloc * mu / temploc
+         val_L      = dexp( -( eparnorm + munorm ) )
+
+         val_L    = val_L * denloc / ( factor * dsqrt( temploc) * temploc )
+c
+         minf = min(minf,val_L)
+         maxf = max(maxf,val_L)
+         val_R = 0.000d0
+         if (vpar.ge.0.000d0) then
+            val_R = val_L
+            val_L = 0.000d0
+         endif
+         f(CHF_IX[i;j;k;l;m],n) = val_L*(1.000d0-z/Ls)+val_R*(1.000d0+z/Ls)
+c     Now we adjust it
+         if (z.le.-Ls) then
+c     This extra factor of 2 comes from the fact that we cut one half of the distribution function
+             f(CHF_IX[i;j;k;l;m],n) = 2.000d0*val_L
+         else
+             if (z.ge.Ls) then
+                 f(CHF_IX[i;j;k;l;m],n) = 2.000d0*val_R
+             endif
+         endif
+
+c
+      CHF_ENDDO
+      enddo
+c
+
+      return
+      end

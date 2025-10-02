@@ -242,7 +242,10 @@ class GKDiagnostics
     void getRadialForceBalance( CFG::LevelData<CFG::FArrayBox>&,
                                 const KineticSpecies& ) const;
 
-    void getTemperature( CFG::LevelData<CFG::FArrayBox>&, 
+    void getParallelForceBalance( CFG::LevelData<CFG::FArrayBox>&,
+                                 const KineticSpecies& ) const;
+   
+    void getTemperature( CFG::LevelData<CFG::FArrayBox>&,
                          const KineticSpecies& ) const;
 
     void getParallelTemperature( CFG::LevelData<CFG::FArrayBox>&, 

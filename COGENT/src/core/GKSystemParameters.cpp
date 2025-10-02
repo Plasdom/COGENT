@@ -51,6 +51,7 @@ GKSystemParameters::GKSystemParameters()
   m_diagnostics_all_cfg_vars_kin_spec.push_back("parallelPressure");
   m_diagnostics_all_cfg_vars_kin_spec.push_back("perpPressure");
   m_diagnostics_all_cfg_vars_kin_spec.push_back("radialForceBalance");
+  m_diagnostics_all_cfg_vars_kin_spec.push_back("parallelForceBalance");
   m_diagnostics_all_cfg_vars_kin_spec.push_back("parallelHeatFlux");
   m_diagnostics_all_cfg_vars_kin_spec.push_back("totalParallelHeatFlux");
   m_diagnostics_all_cfg_vars_kin_spec.push_back("temperature");

@@ -107,6 +107,17 @@ class LogRectPhaseBC
                           const int& species_index,
                           const CFG::LevelData<CFG::FArrayBox>& phi,
                           const LevelData<FluxBox>& velocity);
+  
+      void applyInsulatingBC( KineticSpeciesPtrVect&  a_species,
+			      const int&  a_species_index,
+			      const CFG::LevelData<CFG::FArrayBox>& a_phi,
+			      const LevelData<FluxBox>& a_velocity);
+                        
+                        void applyInsulatingBC_new( KineticSpeciesPtrVect&  a_species,
+			      const int&  a_species_index,
+			      const CFG::LevelData<CFG::FArrayBox>& a_phi,
+			      const LevelData<FluxBox>& a_velocity,
+            const Real&);
    
       void applyFluxBC( KineticSpecies& species,
                        const CFG::LevelData<CFG::FArrayBox>& phi,
@@ -150,6 +161,8 @@ class LogRectPhaseBC
       Vector<std::string> m_bdry_name;
       bool m_all_bdry_defined;
       bool m_logical_sheath_bc;
+  //bool m_insulating_sheath_bc;
+      bool m_insulating_sheath_bc_new;
       bool m_flux_bc;
       ParmParse m_pp;
    

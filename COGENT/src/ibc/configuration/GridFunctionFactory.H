@@ -16,6 +16,7 @@
 #include "RZdata.H"
 #include "OneDimData.H"
 #include "Arbitrary.H"
+#include "ImportData.H"
 
 #include "NamespaceHeader.H"
 
@@ -106,6 +107,9 @@ RefCountedPtr<GridFunction> GridFunctionFactory::create(
    }
    else if (model == "arbitrary") {
       result = RefCountedPtr<GridFunction>( new Arbitrary( a_pp, a_verbosity ) );
+   }
+   else if (model == "importData") {
+      result = RefCountedPtr<GridFunction>( new ImportData( a_pp, a_verbosity ) );
    }
    else {
       MayDay::Error( "GridFunctionFactory: Unimplemented grid function type selected" );
