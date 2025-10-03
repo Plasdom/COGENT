@@ -300,42 +300,6 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    m_first_call = false;
 }
 
-void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
-{
-   double T_norm;
-   ParmParse ppunits( "units" );
-   ppunits.get("temperature",T_norm);     //[eV]
-
-   const PhaseGeom& phase_geom = a_species.phaseSpaceGeometry();
-   const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
-   
-   CFG::LevelData<CFG::FArrayBox> iz_source_velocity_cfg( mag_geom.grids(), 1, CFG::IntVect::Zero );
-   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
-      iz_source_velocity_cfg[dit].setVal(0.);
-   }
-   (a_species).temperature(m_Te_cfg);
-   // (a_species).numberDensity(m_electron_density_cfg);
-   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
-      m_iz_source_temperature_cfg[dit].copy(m_Te_cfg[dit]);
-      m_iz_source_temperature_cfg[dit].divide(2.0);
-      m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
-   }
-   MaxwellianKernel<FArrayBox> maxwellian(m_iz_source_density_cfg, m_iz_source_temperature_cfg, iz_source_velocity_cfg);
-   maxwellian.eval(m_iz_source_maxw,a_species);
-
-   CFG::LevelData<CFG::FArrayBox> ne(mag_geom.grids(), 1, CFG::IntVect::Zero);
-   a_species.numberDensity( ne );
-   phase_geom.injectConfigurationToPhase(ne, m_ne_inj);
-   
-   for (DataIterator dit( m_iz_source_dfn.dataIterator() ); dit.ok(); ++dit) {
-      
-      FORT_MULT_NI(CHF_BOX(m_iz_source_dfn[dit].box()),
-                   CHF_FRA1(m_iz_source_dfn[dit],0),
-                   CHF_CONST_FRA1(m_iz_source_maxw[dit],0),
-                   CHF_CONST_FRA1(m_ne_inj[dit],0));
-   }
-}
-
 
 void FluidNeutrals::computeIonizationRHS(LevelData<FArrayBox>& a_rhs,
                                          const LevelData<FArrayBox>& a_soln_dfn,
@@ -466,6 +430,44 @@ void FluidNeutrals::computeIonizationSigmaV(CFG::LevelData<CFG::FArrayBox>&   a_
    double norm = time_norm * N;
    for (CFG::DataIterator dit(grids); dit.ok(); ++dit) {
       a_ionization_sigmaV[dit].mult(norm);
+   }
+}
+
+void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
+{
+   double T_norm;
+   ParmParse ppunits( "units" );
+   ppunits.get("temperature",T_norm);     //[eV]
+
+   const PhaseGeom& phase_geom = a_species.phaseSpaceGeometry();
+   const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
+   
+   CFG::LevelData<CFG::FArrayBox> iz_source_velocity_cfg( mag_geom.grids(), 1, CFG::IntVect::Zero );
+   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      iz_source_velocity_cfg[dit].setVal(0.);
+   }
+   (a_species).temperature(m_Te_cfg);
+   // (a_species).numberDensity(m_electron_density_cfg);
+   for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
+      m_iz_source_temperature_cfg[dit].copy(m_Te_cfg[dit]);
+      m_iz_source_temperature_cfg[dit].divide(2.0);
+      m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
+   }
+   MaxwellianKernel<FArrayBox> maxwellian(m_iz_source_density_cfg, m_iz_source_temperature_cfg, iz_source_velocity_cfg);
+   maxwellian.eval(m_iz_source_maxw,a_species);
+
+   CFG::LevelData<CFG::FArrayBox> ne(mag_geom.grids(), 1, CFG::IntVect::Zero);
+   a_species.numberDensity( ne );
+   phase_geom.injectConfigurationToPhase(ne, m_ne_inj);
+
+   // m_iz_source_dfn.
+   
+   for (DataIterator dit( m_iz_source_dfn.dataIterator() ); dit.ok(); ++dit) {
+      
+      FORT_MULT_NI(CHF_BOX(m_iz_source_dfn[dit].box()),
+                   CHF_FRA1(m_iz_source_dfn[dit],0),
+                   CHF_CONST_FRA1(m_iz_source_maxw[dit],0),
+                   CHF_CONST_FRA1(m_ne_inj[dit],0));
    }
 }
 
