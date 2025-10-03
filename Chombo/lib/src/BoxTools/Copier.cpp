@@ -967,7 +967,7 @@ void Copier::define(const BoxLayout& a_level,
               // first, check to see if ghost cells require multiple wraps
               if (a_ghost[dir] > domainBox.size(dir))
                 {
-                  MayDay::Warning("nGhost > domainBox size in periodic direction - requires multiple wraps");
+                  // VG: Remove this warning to run in 1D      MayDay::Warning("nGhost > domainBox size in periodic direction - requires multiple wraps");
                   multipleWraps = true;
                 }
               // then, check to see if valid regions require multiple shifts
