@@ -326,7 +326,7 @@ void ConsDragDiff::computeSelfConsistFreq(LevelData<FArrayBox>&       a_cls_freq
 
     // Compute normalized collision frequency, cls_norm = cls_phys * L/Sqrt[T/mp]
     // use Eq. (2.53) from E. Shi Thesis, but retain our expression for Coulomb logarithm
-    double Coulomb_Lg = 23 - log( sqrt(2.0) * pow(a_charge,3) * sqrt(N)/1000.0 / pow(T, 3.0/2.0) );
+    double Coulomb_Lg = 23 - log( sqrt(2.0) * pow(abs(a_charge),3) * sqrt(N)/1000.0 / pow(T, 3.0/2.0) );
     double cls_norm = coeff * N * pow(ech, 2) * pow(a_charge, 4) * L
                      / ( sqrt(a_mass) *  pow(T, 2)) * Coulomb_Lg;
 
@@ -437,7 +437,7 @@ void ConsDragDiff::updateBlockPC( std::vector<Preconditioner<ODEVector,AppCtxt>*
                                   const bool                                        a_im,
                                   const int                                         a_species_index )
 {
-  if (a_im && m_time_implicit && (m_it_counter % m_update_PC_freq == 0 || m_first_PC_assemble)) {
+  if (a_im && m_time_implicit && (m_it_counter % m_update_PC_freq == 0 || m_it_counter == 2 || m_first_PC_assemble)) { 
     CH_assert(m_my_pc_idx >= 0);
     CH_assert(a_pc.size() > m_my_pc_idx);
 
