@@ -935,7 +935,8 @@ void OneFieldNeutralsOp::parseParameters( ParmParse& a_pp )
    if (a_pp.contains("use_Te_in_rate_calculation")) {
       a_pp.get( "use_Te_in_rate_calculation", m_use_Te_in_rate_calculation );
    }
-   else if (a_pp.contains("electron_temperature")) {
+   
+   if (a_pp.contains("electron_temperature")) {
       a_pp.get( "electron_temperature", grid_function_name );
       m_Te_func = grid_library->find( grid_function_name );
    }
