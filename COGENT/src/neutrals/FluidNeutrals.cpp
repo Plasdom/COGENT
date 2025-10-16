@@ -7,6 +7,9 @@
 #include "PhaseBlockCoordSys.H"
 #include "NeutralsF_F.H"
 #include "KineticFunctionLibrary.H"
+#include "MaxwellianKineticFunctionF_F.H"
+#include "KineticFunctionUtils.H"
+#include "MomentOp.H"
 #include "ConstFact.H"
 #include "Kernels.H"
 #include "inspect.H"
@@ -441,6 +444,7 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
 
    const PhaseGeom& phase_geom = a_species.phaseSpaceGeometry();
    const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
+   const DisjointBoxLayout& grids = m_iz_source_maxw.disjointBoxLayout();
    
    CFG::LevelData<CFG::FArrayBox> iz_source_velocity_cfg( mag_geom.grids(), 1, CFG::IntVect::Zero );
    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
@@ -469,6 +473,23 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
                    CHF_CONST_FRA1(m_iz_source_maxw[dit],0),
                    CHF_CONST_FRA1(m_ne_inj[dit],0));
    }
+
+   // Compute density moment of this iz source dfn
+   MomentOp& moment_op = MomentOp::instance();
+   CFG::LevelData<CFG::FArrayBox> source_dfn_density_moment( mag_geom.grids(), 1, CFG::IntVect::Zero );
+   moment_op.compute(source_dfn_density_moment, a_species, m_iz_source_maxw, DensityKernel<FArrayBox>());
+   
+   // Normalise this distribution to the density moment of the electron distribution to ensure particle conservation
+   LevelData<FArrayBox> source_dfn_density_moment_inj;
+   phase_geom.injectConfigurationToPhase(source_dfn_density_moment, source_dfn_density_moment_inj);
+   for (DataIterator dit(grids.dataIterator() ); dit.ok(); ++dit) 
+   {
+      FORT_ENFORCE_INPUT_DENS_PROF(CHF_FRA(m_iz_source_maxw[dit]),
+                                   CHF_BOX(grids[dit]),
+                                   CHF_CONST_FRA1(m_ne_inj[dit],0),
+                                   CHF_CONST_FRA1(source_dfn_density_moment_inj[dit],0));
+   }
+
 }
 
 void FluidNeutrals::updateNeutralDfn(const KineticSpecies&  a_ion_species)
