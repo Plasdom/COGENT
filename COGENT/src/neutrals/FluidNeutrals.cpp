@@ -486,8 +486,8 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
    {
       FORT_ENFORCE_INPUT_DENS_PROF(CHF_FRA(m_iz_source_maxw[dit]),
                                    CHF_BOX(grids[dit]),
-                                   CHF_CONST_FRA1(m_ne_inj[dit],0),
-                                   CHF_CONST_FRA1(source_dfn_density_moment_inj[dit],0));
+                                   CHF_CONST_FRA1(source_dfn_density_moment_inj[dit],0),
+                                   CHF_CONST_FRA1(m_ne_inj[dit],0));
    }
 
 }
