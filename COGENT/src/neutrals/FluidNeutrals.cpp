@@ -477,14 +477,14 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
    // Compute density moment of this iz source dfn
    MomentOp& moment_op = MomentOp::instance();
    CFG::LevelData<CFG::FArrayBox> source_dfn_density_moment( mag_geom.grids(), 1, CFG::IntVect::Zero );
-   moment_op.compute(source_dfn_density_moment, a_species, m_iz_source_maxw, DensityKernel<FArrayBox>());
+   moment_op.compute(source_dfn_density_moment, a_species, m_iz_source_dfn, DensityKernel<FArrayBox>());
    
    // Normalise this distribution to the density moment of the electron distribution to ensure particle conservation
    LevelData<FArrayBox> source_dfn_density_moment_inj;
    phase_geom.injectConfigurationToPhase(source_dfn_density_moment, source_dfn_density_moment_inj);
    for (DataIterator dit(grids.dataIterator() ); dit.ok(); ++dit) 
    {
-      FORT_ENFORCE_INPUT_DENS_PROF(CHF_FRA(m_iz_source_maxw[dit]),
+      FORT_ENFORCE_INPUT_DENS_PROF(CHF_FRA(m_iz_source_dfn[dit]),
                                    CHF_BOX(grids[dit]),
                                    CHF_CONST_FRA1(source_dfn_density_moment_inj[dit],0),
                                    CHF_CONST_FRA1(m_ne_inj[dit],0));
