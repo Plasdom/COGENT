@@ -463,8 +463,6 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
    CFG::LevelData<CFG::FArrayBox> ne(mag_geom.grids(), 1, CFG::IntVect::Zero);
    a_species.numberDensity( ne );
    phase_geom.injectConfigurationToPhase(ne, m_ne_inj);
-
-   // m_iz_source_dfn.
    
    for (DataIterator dit( m_iz_source_dfn.dataIterator() ); dit.ok(); ++dit) {
       
@@ -509,6 +507,23 @@ void FluidNeutrals::updateNeutralDfn(const KineticSpecies&  a_ion_species)
                    CHF_FRA1(m_neutral_dfn[dit],0),
                    CHF_CONST_FRA1(m_neutral_maxw[dit],0),
                    CHF_CONST_FRA1(m_ni_inj[dit],0));
+   }
+
+   // Compute density moment of this neutral dfn
+   MomentOp& moment_op = MomentOp::instance();
+   CFG::LevelData<CFG::FArrayBox> neutral_dfn_density_moment( mag_geom.grids(), 1, CFG::IntVect::Zero );
+   moment_op.compute(neutral_dfn_density_moment, a_ion_species, m_neutral_dfn, DensityKernel<FArrayBox>());
+   
+   // Normalise this distribution to the density moment of the ion distribution to ensure particle conservation
+   const DisjointBoxLayout& grids = m_iz_source_maxw.disjointBoxLayout();
+   LevelData<FArrayBox> neutral_dfn_density_moment_inj;
+   phase_geom.injectConfigurationToPhase(neutral_dfn_density_moment, neutral_dfn_density_moment_inj);
+   for (DataIterator dit(grids.dataIterator() ); dit.ok(); ++dit) 
+   {
+      FORT_ENFORCE_INPUT_DENS_PROF(CHF_FRA(m_neutral_dfn[dit]),
+                                   CHF_BOX(grids[dit]),
+                                   CHF_CONST_FRA1(neutral_dfn_density_moment_inj[dit],0),
+                                   CHF_CONST_FRA1(m_ni_inj[dit],0));
    }
    
    
