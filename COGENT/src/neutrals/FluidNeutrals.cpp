@@ -515,7 +515,7 @@ void FluidNeutrals::updateNeutralDfn(const KineticSpecies&  a_ion_species)
    moment_op.compute(neutral_dfn_density_moment, a_ion_species, m_neutral_dfn, DensityKernel<FArrayBox>());
    
    // Normalise this distribution to the density moment of the ion distribution to ensure particle conservation
-   const DisjointBoxLayout& grids = m_iz_source_maxw.disjointBoxLayout();
+   const DisjointBoxLayout& grids = m_neutral_dfn.disjointBoxLayout();
    LevelData<FArrayBox> neutral_dfn_density_moment_inj;
    phase_geom.injectConfigurationToPhase(neutral_dfn_density_moment, neutral_dfn_density_moment_inj);
    for (DataIterator dit(grids.dataIterator() ); dit.ok(); ++dit) 
