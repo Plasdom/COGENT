@@ -34,6 +34,7 @@ void GKOps::define( const GKState&            a_state,
    */
    m_transport_imex_implicit  = false;
    m_neutrals_imex_implicit   = false;
+   m_sources_imex_implicit   = false;
 
    setParameters( a_gkparams );
 
@@ -73,7 +74,7 @@ void GKOps::define( const GKState&            a_state,
    if (m_neutrals_model_on) {
       m_neutrals = new GKNeutrals( m_verbosity );
    }
-   if (m_source_model_on) {
+   if (m_sources_model_on) {
       m_sources = new GKSources (m_verbosity);
    }
 
@@ -420,6 +421,7 @@ GKOps::~GKOps()
    if (m_scalarOp) delete m_scalarOp;
    if (m_transport) delete m_transport;
    if (m_neutrals)  delete m_neutrals;
+   if (m_sources)  delete m_sources;
    if (m_vlasov) delete m_vlasov;
    for (int ihist(0); ihist<m_hist_count; ihist++) {
      FieldHist *save_hist = &m_fieldHistLists[ihist];
@@ -479,6 +481,13 @@ Real GKOps::stableDtExpl( const GKState& a_state, const int a_step_number )
       }
    }
 
+   if (m_sources_model_on) {
+      if (m_dt_sources_expl < dt_stable) {
+        dt_stable = m_dt_sources_expl;
+        who = "sources";
+      }
+   }
+
    if (!procID()) {
      if (who != "nobody") {
       printf("Stable dt for explicit time integration: %f", dt_stable);
@@ -528,6 +537,13 @@ Real GKOps::stableDtImEx( const GKState& a_state, const int a_step_number )
       if (m_dt_neutrals_imex < dt_stable) {
         dt_stable = m_dt_neutrals_imex;
         who = "neutrals";
+      }
+   }
+
+   if (m_sources_model_on) {
+      if (m_dt_sources_imex < dt_stable) {
+        dt_stable = m_dt_sources_imex;
+        who = "sources";
       }
    }
 
@@ -638,6 +654,12 @@ void GKOps::preTimeStep (const int       a_step,
       m_dt_neutrals_expl = m_neutrals->computeDtExplicitTI( soln_phys );
       m_dt_neutrals_imex = m_neutrals->computeDtImExTI( soln_phys );
       m_time_scale_neutrals = m_neutrals->computeTimeScale( soln_phys );
+   }
+   if (m_sources_model_on) {
+      m_sources->preTimeStep( soln_comp, a_time, soln_phys );
+      m_dt_sources_expl = m_sources->computeDtExplicitTI( soln_phys );
+      m_dt_sources_imex = m_sources->computeDtImExTI( soln_phys );
+      m_time_scale_sources = m_sources->computeTimeScale( soln_phys );
    }
    CH_STOP(t_compute_dt);
 
@@ -981,6 +1003,11 @@ void GKOps::explicitOp( GKRHSData&      a_rhs,
                              m_fluid_species_phys, a_time );
    }
 
+   if (m_sources_model_on) {
+      applySourcesOperator( a_rhs.dataKinetic(), m_kinetic_species_phys,
+                             m_fluid_species_phys, a_time );
+   }
+
    applyCollisionOperator( a_rhs.dataKinetic(), a_state_comp.dataKinetic(), unsplit, a_time );
 
    applyFluidOperator( a_rhs.dataFluid(), m_kinetic_species_phys, m_fluid_species_phys,
@@ -1008,6 +1035,11 @@ void GKOps::explicitOpImEx( GKRHSData&      a_rhs,
 
    if (m_neutrals_model_on && (!m_neutrals_imex_implicit) ) {
       applyNeutralsOperator( a_rhs.dataKinetic(), m_kinetic_species_phys,
+                             m_fluid_species_phys, a_time );
+   }
+
+   if (m_sources_model_on && (!m_sources_imex_implicit) ) {
+      applySourcesOperator( a_rhs.dataKinetic(), m_kinetic_species_phys,
                              m_fluid_species_phys, a_time );
    }
 
@@ -1050,6 +1082,13 @@ void GKOps::implicitOpImEx( GKRHSData&      a_rhs,
 
    if (m_neutrals_model_on && (m_neutrals_imex_implicit) ) {
       applyNeutralsOperator(  a_rhs.dataKinetic(),
+                              m_kinetic_species_phys,
+                              m_fluid_species_phys,
+                              a_time );
+   }
+
+   if (m_sources_model_on && (m_sources_imex_implicit) ) {
+      applySourcesOperator(  a_rhs.dataKinetic(),
                               m_kinetic_species_phys,
                               m_fluid_species_phys,
                               a_time );
@@ -1136,6 +1175,11 @@ void GKOps::explicitPC( GKRHSData&     a_rhs,
 
    if (m_neutrals_model_on) {
       applyNeutralsOperator( a_rhs.dataKinetic(), m_kinetic_species_phys,
+                             m_fluid_species_phys, a_time );
+   }
+
+   if (m_sources_model_on) {
+      applySourcesOperator( a_rhs.dataKinetic(), m_kinetic_species_phys,
                              m_fluid_species_phys, a_time );
    }
 
@@ -1506,6 +1550,17 @@ void GKOps::applyNeutralsOperator( KineticSpeciesPtrVect&            a_rhs,
 
 }
 
+inline
+void GKOps::applySourcesOperator( KineticSpeciesPtrVect&            a_rhs,
+                                   const KineticSpeciesPtrVect&      a_kinetic_species_phys,
+                                   const CFG::FluidSpeciesPtrVect&   a_fluid_species_phys,
+                                   const Real&                       a_time )
+{
+    m_count_sources++;
+    m_sources->accumulateRHS( a_rhs, a_kinetic_species_phys, a_fluid_species_phys, a_time );
+
+}
+
 
 inline
 void GKOps::applyFluidOperator( CFG::FluidSpeciesPtrVect&                  a_rhs,
@@ -1720,6 +1775,7 @@ void GKOps::setParameters( const GKSystemParameters& a_gkparams )
 
   m_transport_imex_implicit = a_gkparams.imexTransportImplicit();
   m_neutrals_imex_implicit = a_gkparams.imexNeutralsImplicit();
+//   m_sources_imex_implicit = a_gkparams.imexSourcesImplicit();
 
   m_old_vorticity_model = a_gkparams.oldVorticityModel();
   m_EM_effects = a_gkparams.includeEMeffects();
@@ -1746,7 +1802,7 @@ void GKOps::setParameters( const GKSystemParameters& a_gkparams )
 
   m_transport_model_on = a_gkparams.transportModelOn();
   m_neutrals_model_on = a_gkparams.neutralsModelOn();
-  m_source_model_on = a_gkparams.sourceModelOn();
+  m_sources_model_on = a_gkparams.sourceModelOn();
 
   m_enforce_quasineutrality = a_gkparams.enforceQuasineutrality();
   m_step_const_kin_coeff_fluidop = a_gkparams.stepConstKineticCoeffFluidOp();

@@ -133,6 +133,7 @@ public:
       m_count_fluids(0),
       m_count_scalars(0),
       m_count_neutrals(0),
+      m_count_sources(0),
       m_verbosity(0) {;}
 
    /// Destructor.
@@ -432,6 +433,7 @@ public:
       cout << "    Fluids     : " << m_count_fluids     << "\n";
       cout << "    Scalars    : " << m_count_scalars    << "\n";
       cout << "    Neutrals   : " << m_count_neutrals   << "\n";
+      cout << "    Sources    : " << m_count_sources    << "\n";
     }
    }
 
@@ -509,6 +511,11 @@ private:
                                 const Real&                  time );
 
    void applyNeutralsOperator( KineticSpeciesPtrVect&          rhs,
+                               const KineticSpeciesPtrVect&    kinetic_species_phys,
+                               const CFG::FluidSpeciesPtrVect& fluid_species,
+                               const Real&                     time );
+
+   void applySourcesOperator( KineticSpeciesPtrVect&          rhs,
                                const KineticSpeciesPtrVect&    kinetic_species_phys,
                                const CFG::FluidSpeciesPtrVect& fluid_species,
                                const Real&                     time );
@@ -607,7 +614,7 @@ private:
    bool m_no_efield;
    bool m_transport_model_on;
    bool m_neutrals_model_on;
-   bool m_source_model_on;
+   bool m_sources_model_on;
    bool m_enforce_quasineutrality;
    bool m_Esol_extrapolation;
    bool m_dealignment_corrections;
@@ -618,6 +625,7 @@ private:
    /* The following 4 flags are relevant only for IMEX time integration */
    bool m_transport_imex_implicit;
    bool m_neutrals_imex_implicit;
+   bool m_sources_imex_implicit;
 
    bool m_ark_first_stage_explicit;
 
@@ -645,6 +653,7 @@ private:
    Real m_dt_fluids_expl;
    Real m_dt_scalars_expl;
    Real m_dt_neutrals_expl;
+   Real m_dt_sources_expl;
 
    std::vector<std::pair<std::string,Real> > m_dt_vlasov_imex;
    Real m_dt_collisions_imex;
@@ -652,6 +661,7 @@ private:
    Real m_dt_fluids_imex;
    Real m_dt_scalars_imex;
    Real m_dt_neutrals_imex;
+   Real m_dt_sources_imex;
 
    std::vector<std::pair<std::string,Real> > m_time_scale_vlasov;
    Real m_time_scale_collisions;
@@ -659,6 +669,7 @@ private:
    Real m_time_scale_fluids;
    Real m_time_scale_scalars;
    Real m_time_scale_neutrals;
+   Real m_time_scale_sources;
 
    // stores data pertaining to a watchpoint history
    typedef struct {
