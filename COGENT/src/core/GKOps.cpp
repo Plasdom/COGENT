@@ -73,6 +73,9 @@ void GKOps::define( const GKState&            a_state,
    if (m_neutrals_model_on) {
       m_neutrals = new GKNeutrals( m_verbosity );
    }
+   if (m_source_model_on) {
+      m_sources = new GKSources (m_verbosity);
+   }
 
    m_Y.define(a_state);
 
@@ -1743,6 +1746,7 @@ void GKOps::setParameters( const GKSystemParameters& a_gkparams )
 
   m_transport_model_on = a_gkparams.transportModelOn();
   m_neutrals_model_on = a_gkparams.neutralsModelOn();
+  m_source_model_on = a_gkparams.sourceModelOn();
 
   m_enforce_quasineutrality = a_gkparams.enforceQuasineutrality();
   m_step_const_kin_coeff_fluidop = a_gkparams.stepConstKineticCoeffFluidOp();

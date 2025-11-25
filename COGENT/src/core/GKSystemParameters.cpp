@@ -106,6 +106,7 @@ GKSystemParameters::GKSystemParameters()
 
   m_transport_model_on = false;
   m_neutrals_model_on = false;
+  m_source_model_on = false;
 
   m_enforce_quasineutrality = false;
   m_step_const_kin_coeff_fluidop = false;
@@ -314,6 +315,7 @@ void GKSystemParameters::readParams(const std::string&  a_parsekey)
 
   ppgksys.query("transport_model_on", m_transport_model_on);
   ppgksys.query("neutrals_model_on", m_neutrals_model_on);
+  ppgksys.query("source_model_on", m_source_model_on);
 
   ppgksys.query( "gksystem.enforce_quasineutrality", m_enforce_quasineutrality );
   ppgksys.query("step_const_coef", m_step_const_kin_coeff_fluidop);

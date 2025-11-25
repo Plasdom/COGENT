@@ -5,7 +5,7 @@
 #include "KineticSpecies.H"
 #include "KineticFunction.H"
 #include "KineticFunctionLibrary.H"
-#include "NTRInterface.H"
+#include "SRCInterface.H"
 #include "ParmParse.H"
 #include <sstream>
 
@@ -22,7 +22,7 @@
  * PrescribedSources neutrals operator class.
 */
 class PrescribedSources
-   : public NTRInterface
+   : public SRCInterface
 {
 public:
 
@@ -30,7 +30,7 @@ public:
   /**
    *  @param[in] pp the input database.
    */
-  PrescribedSources(ParmParse&  a_ppntr,
+  PrescribedSources(ParmParse&  a_ppsrc,
                     const int a_verbosity );
 
   /// Destructor.
@@ -45,7 +45,7 @@ public:
    * @param[in] species index of species to which collision is applied.
    * @param[in] time current time.
    */
-  virtual void evalNtrRHS( KineticSpecies&                  rhs_species,
+  virtual void evalSrcRHS( KineticSpecies&                  rhs_species,
                            const KineticSpeciesPtrVect&     soln,
                            const CFG::FluidSpeciesPtrVect&  fluid_species_phys,
                            const int                        species,
@@ -122,10 +122,10 @@ private:
 
    /// Parse parameters.
    /**
-    * Private method to obtain control parameters from "NTR.species" section
+    * Private method to obtain control parameters from "SRC.species" section
     * of ParmParse database, where "species" is replaced by the species name
     *
-    * \param[in] ppntr NTR.species input database.
+    * \param[in] ppsrc SRC.species input database.
     */
    void parseParameters( ParmParse& pp );
    

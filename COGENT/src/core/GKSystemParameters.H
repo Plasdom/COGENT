@@ -89,6 +89,7 @@ class GKSystemParameters
 
     inline bool transportModelOn() const { return m_transport_model_on; }
     inline bool neutralsModelOn() const { return m_neutrals_model_on; }
+    inline bool sourceModelOn() const { return m_source_model_on; }
 
     inline bool enforceQuasineutrality() const { return m_enforce_quasineutrality; }
 
@@ -185,6 +186,7 @@ class GKSystemParameters
 
     bool m_transport_model_on;
     bool m_neutrals_model_on;
+    bool m_source_model_on;
 
     bool m_enforce_quasineutrality;
     bool m_step_const_kin_coeff_fluidop;

@@ -9,6 +9,7 @@
 #include "GKVlasov.H"
 #include "GKCollisions.H"
 #include "GKNeutrals.H"
+#include "GKSources.H"
 #include "GKTransport.H"
 #include "GKUnit.H"
 #include "GKSystemIC.H"
@@ -569,6 +570,7 @@ private:
    GKVlasov*                      m_vlasov;
    GKCollisions*                  m_collisions;
    GKNeutrals*                    m_neutrals;
+   GKSources*                     m_sources;
    GKTransport*                   m_transport;
    CFG::GKFluidOp*                m_fluidOp;
    GKScalarOp*                    m_scalarOp;
@@ -605,6 +607,7 @@ private:
    bool m_no_efield;
    bool m_transport_model_on;
    bool m_neutrals_model_on;
+   bool m_source_model_on;
    bool m_enforce_quasineutrality;
    bool m_Esol_extrapolation;
    bool m_dealignment_corrections;
@@ -678,6 +681,7 @@ private:
    int m_count_fluids;
    int m_count_scalars;
    int m_count_neutrals;
+   int m_count_sources;
 
    int m_verbosity;
 

@@ -15,7 +15,7 @@
 #include "NamespaceHeader.H" 
 
 
-PrescribedSources::PrescribedSources( ParmParse& a_ppntr, const int a_verbosity )
+PrescribedSources::PrescribedSources( ParmParse& a_ppsrc, const int a_verbosity )
    : m_verbosity(a_verbosity),
      m_include_relaxation(false),
      m_include_thermalization(false),
@@ -26,7 +26,7 @@ PrescribedSources::PrescribedSources( ParmParse& a_ppntr, const int a_verbosity 
      m_diagnostics(false)
 
 {
-   parseParameters( a_ppntr );
+   parseParameters( a_ppsrc );
 
    if (m_verbosity>0) {
       printParameters();
@@ -40,7 +40,7 @@ PrescribedSources::~PrescribedSources()
 }
 
 
-void PrescribedSources::evalNtrRHS(KineticSpecies&                   a_rhs_species,
+void PrescribedSources::evalSrcRHS(KineticSpecies&                   a_rhs_species,
                                    const KineticSpeciesPtrVect&      a_soln,
                                    const CFG::FluidSpeciesPtrVect&   a_fluid_species_phys,
                                    const int                         a_species,
@@ -60,7 +60,7 @@ void PrescribedSources::evalNtrRHS(KineticSpecies&                   a_rhs_speci
        that provides energy conservation
    */
    
-  CH_TIME("PrescribedSources::evalNtrRHS");
+  CH_TIME("PrescribedSources::evalSrcRHS");
   
   //Get geometry
   LevelData<FArrayBox>& rhs_dfn( a_rhs_species.distributionFunction() );

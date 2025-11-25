@@ -1,17 +1,17 @@
-#include "GKNeutrals.H"
+#include "GKSources.H"
 
-#include "NTRInterface.H"
-#include "FixedBckgr.H"
+#include "SRCInterface.H"
+// #include "FixedBckgr.H"
 #include "PrescribedSources.H"
-#include "FluidNeutrals.H"
-#include "NullNTR.H"
+// #include "FluidNeutrals.H"
+#include "NullSRC.H"
 
 #include <float.h>
 #include <sstream>
 
 #include "NamespaceHeader.H"
 
-GKNeutrals::GKNeutrals( const int a_verbose )
+GKSources::GKSources( const int a_verbose )
    : m_verbose(a_verbose)
 {
    bool more_kinetic_species(true);
@@ -27,37 +27,30 @@ GKNeutrals::GKNeutrals( const int a_verbose )
       if (ppspecies.contains("name")) {
          ppspecies.get("name", species_name);
          
-         std::string ntr_type("None");
-         NTRInterface* ntr(NULL);
+         std::string src_type("None");
+         SRCInterface* src(NULL);
          
-         if (ppspecies.contains( "ntr" )) {
-            ppspecies.get( "ntr", ntr_type );
-            const std::string prefix( "NTR." + species_name );
-            ParmParse ppntr( prefix.c_str() );
-            
-            if (ntr_type == "FixedBckgr") {
-               ntr = new FixedBckgr( ppntr, m_verbose );
+         if (ppspecies.contains( "src" )) {
+            ppspecies.get( "src", src_type );
+            const std::string prefix( "SRC." + species_name );
+            ParmParse ppsrc( prefix.c_str() );
+         
+            if (src_type == "PrescribedSources") {
+               src = new PrescribedSources( ppsrc, m_verbose );
             }
-
-         //   if (ntr_type == "PrescribedSources") {
-         //      ntr = new PrescribedSources( ppntr, m_verbose );
-         //   }
            
-            if (ntr_type == "FluidNeutrals") {
-               ntr = new FluidNeutrals( ppntr, m_verbose );
-            }
          }
          else {
             if (procID()==0) {
-              cout << "Unrecognized neutral model; setting model to NULL" << endl;
+              cout << "Unrecognized source model; setting model to NULL" << endl;
             }
-            ntr = new NullNTR();
+            src = new NullSRC();
          }
          
-         m_neutral_model.push_back( ntr );
+         m_source_model.push_back( src );
          typedef std::map<std::string,int>::value_type valType;
          m_species_map.insert( valType( species_name, count ) );
-	 m_neutral_model_name.insert( valType( ntr_type, count ) );
+	      m_source_model_name.insert( valType( src_type, count ) );
          count++;
       }
       else {
@@ -67,25 +60,25 @@ GKNeutrals::GKNeutrals( const int a_verbose )
 }
 
 
-GKNeutrals::~GKNeutrals()
+GKSources::~GKSources()
 {
-   for (int i(0); i<m_neutral_model.size(); i++ ) {
-      delete m_neutral_model[i];
+   for (int i(0); i<m_source_model.size(); i++ ) {
+      delete m_source_model[i];
    }
 }
 
 
-NTRInterface& GKNeutrals::neutralModel( const std::string& a_name )
+SRCInterface& GKSources::sourceModel( const std::string& a_name )
 {
    typedef std::map<std::string,int>::iterator mapIterator;
    const mapIterator it( m_species_map.find( a_name ) );
    CH_assert(it!=m_species_map.end());
    const int index((*it).second);
-   return *(m_neutral_model[index]);
+   return *(m_source_model[index]);
 }
 
 
-void GKNeutrals::accumulateRHS( KineticSpeciesPtrVect&            a_rhs,
+void GKSources::accumulateRHS( KineticSpeciesPtrVect&            a_rhs,
                                 const KineticSpeciesPtrVect&      a_kinetic_species_phys,
                                 const CFG::FluidSpeciesPtrVect&   a_fluid_species_phys,
                                 const Real                        a_time )
@@ -93,8 +86,8 @@ void GKNeutrals::accumulateRHS( KineticSpeciesPtrVect&            a_rhs,
    for (int species(0); species<a_rhs.size(); species++) {
       KineticSpecies& rhs_species( *(a_rhs[species]) );
       const std::string species_name( rhs_species.name() );
-      NTRInterface& NTR( neutralModel( species_name ) );
-      NTR.evalNtrRHS( rhs_species,
+      SRCInterface& SRC( sourceModel( species_name ) );
+      SRC.evalSrcRHS( rhs_species,
                       a_kinetic_species_phys,
                       a_fluid_species_phys,
                       species,
@@ -103,13 +96,13 @@ void GKNeutrals::accumulateRHS( KineticSpeciesPtrVect&            a_rhs,
 }
 
 
-Real GKNeutrals::computeDtExplicitTI( const KineticSpeciesPtrVect& soln )
+Real GKSources::computeDtExplicitTI( const KineticSpeciesPtrVect& soln )
 {
   Real dt(DBL_MAX);
   int count(0);
   std::map<std::string,int>::iterator it;
-  for (it=m_neutral_model_name.begin(); it!=m_neutral_model_name.end(); ++it) {
-    Real tmp = m_neutral_model[it->second]->computeDtExplicitTI(soln,it->second);
+  for (it=m_source_model_name.begin(); it!=m_source_model_name.end(); ++it) {
+    Real tmp = m_source_model[it->second]->computeDtExplicitTI(soln,it->second);
     dt = (tmp < dt ? tmp : dt);
     count++;
   }
@@ -117,13 +110,13 @@ Real GKNeutrals::computeDtExplicitTI( const KineticSpeciesPtrVect& soln )
 
 }
 
-Real GKNeutrals::computeDtImExTI( const KineticSpeciesPtrVect& soln )
+Real GKSources::computeDtImExTI( const KineticSpeciesPtrVect& soln )
 {
   Real dt(DBL_MAX);
   int count(0);
   std::map<std::string,int>::iterator it;
-  for (it=m_neutral_model_name.begin(); it!=m_neutral_model_name.end(); ++it) {
-    Real tmp = m_neutral_model[it->second]->computeDtImExTI(soln,it->second);
+  for (it=m_source_model_name.begin(); it!=m_source_model_name.end(); ++it) {
+    Real tmp = m_source_model[it->second]->computeDtImExTI(soln,it->second);
     dt = (tmp < dt ? tmp : dt);
     count++;
   }
@@ -131,13 +124,13 @@ Real GKNeutrals::computeDtImExTI( const KineticSpeciesPtrVect& soln )
 
 }
 
-Real GKNeutrals::computeTimeScale( const KineticSpeciesPtrVect& soln )
+Real GKSources::computeTimeScale( const KineticSpeciesPtrVect& soln )
 {
   std::map<std::string,int>::iterator it;
   Real scale = DBL_MAX;
   int count = 0;
-  for (it=m_neutral_model_name.begin(); it!=m_neutral_model_name.end(); ++it) {
-    Real tmp = m_neutral_model[it->second]->TimeScale(soln,it->second);
+  for (it=m_source_model_name.begin(); it!=m_source_model_name.end(); ++it) {
+    Real tmp = m_source_model[it->second]->TimeScale(soln,it->second);
     scale = (tmp < scale ? tmp : scale);
     count++;
   }
@@ -145,7 +138,7 @@ Real GKNeutrals::computeTimeScale( const KineticSpeciesPtrVect& soln )
 
 }
 
-void GKNeutrals::preTimeStep( const KineticSpeciesPtrVect& a_soln,
+void GKSources::preTimeStep( const KineticSpeciesPtrVect& a_soln,
                               const Real a_time,
                               const KineticSpeciesPtrVect& a_soln_physical )
 
@@ -153,8 +146,8 @@ void GKNeutrals::preTimeStep( const KineticSpeciesPtrVect& a_soln,
   for (int species(0); species<a_soln.size(); species++) {
     KineticSpecies&           soln_species(*(a_soln[species]));
     const std::string         species_name(soln_species.name());
-    NTRInterface& NTR( neutralModel( species_name ) );
-    NTR.preTimeStep(a_soln, species, a_time, a_soln_physical);
+    SRCInterface& SRC( sourceModel( species_name ) );
+    SRC.preTimeStep(a_soln, species, a_time, a_soln_physical);
   }
 }
 
