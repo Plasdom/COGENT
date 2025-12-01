@@ -82,6 +82,9 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    if ( !m_Ta.isDefined()) m_Ta.define( grids_cfg, 1, CFG::IntVect::Zero );
    if ( !m_Tb.isDefined()) m_Tb.define( grids_cfg, 1, CFG::IntVect::Zero );
 
+   if ( !m_Va.isDefined()) m_Va.define( grids_cfg, 1, CFG::IntVect::Zero );
+   if ( !m_Vb.isDefined()) m_Vb.define( grids_cfg, 1, CFG::IntVect::Zero );
+
    if ( !m_Na.isDefined()) m_Na.define( grids_cfg, 1, CFG::IntVect::Zero );
    if ( !m_Nb.isDefined()) m_Nb.define( grids_cfg, 1, CFG::IntVect::Zero );
    
@@ -99,8 +102,8 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    
    if ( !m_fixed_bkgr && ((m_update_freq < 0) || (m_it_counter % m_update_freq == 0 && m_first_stage) || m_first_call)) {
       // Get background data by fitting Maxwellian
-      computeMaxwellianFit(m_F0a, m_Ta, m_Na,  m_Ta_inj, m_Na_inj, soln_species_a, soln_dfn_a, a_time );
-      computeMaxwellianFit(m_F0b, m_Tb, m_Nb,  m_Tb_inj, m_Nb_inj, soln_species_b, soln_dfn_b, a_time );
+      computeMaxwellianFit(m_F0a, m_Ta, m_Na, m_Va, m_Ta_inj, m_Na_inj, m_Va_inj, soln_species_a, soln_dfn_a, a_time );
+      computeMaxwellianFit(m_F0b, m_Tb, m_Nb, m_Vb, m_Tb_inj, m_Nb_inj, m_Vb_inj, soln_species_b, soln_dfn_b, a_time );
       
       // Compute cls frequency normalization and FP terms
       getClsFreqNorm(m_cls_norm, m_Ta, m_Tb, m_Na, m_Nb, phase_geom);
@@ -134,7 +137,7 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    if ( !m_rhs_tmp.isDefined()) m_rhs_tmp.define( grids, 1, IntVect::Zero );
 
    // Compute CTP_ab[Fa0b,F0b] and add to RHS
-   if (m_include_bkgr_cls) {
+   if (m_include_bkgr_cls && m_charge_a > 0) {
      testPartCollRHS(m_rhs_tmp, m_F0a, m_Nb_inj, m_Tb_inj, soln_species_a, m_mass_a, m_mass_b);
      for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
        rhs_dfn[dit].plus(m_rhs_tmp[dit]);
@@ -144,15 +147,17 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    // Compute CTP_ab[delta_fa,F0b] and add to RHS
    testPartCollRHS(m_rhs_tmp, m_delta_dfn_a, m_Nb_inj, m_Tb_inj, soln_species_a, m_mass_a, m_mass_b);
    for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
-     rhs_dfn[dit].plus(m_rhs_tmp[dit]);
+      rhs_dfn[dit].plus(m_rhs_tmp[dit]);
    }
 
+
+ #if 0  
    // Compute CFP_ab and add to RHS
    fieldPartCollRHS(m_rhs_tmp, m_delta_dfn_b, soln_species_b);
    for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
      rhs_dfn[dit].plus(m_rhs_tmp[dit]);
    }
-
+#endif
    m_first_call = false;
    m_first_stage = false;
 }
@@ -226,16 +231,17 @@ void LinearizedUnlike::testPartCollRHS(LevelData<FArrayBox>& a_rhs_coll,
                                       CHF_CONST_REALVECT(vel_dx),
                                       CHF_CONST_REAL(a_ma),
                                       CHF_CONST_REAL(a_mb));
-
-      //Add energy-diffusion part of the TP collisions
-      FORT_EVALUATE_TP_ENERG_DIFF_UNLIKE(CHF_FRA(this_flux_cc),
-                                         CHF_CONST_FRA1(this_delta_dfn,0),
-                                         CHF_CONST_FRA1(this_b,0),
-                                         CHF_CONST_FRA1(this_temperature,0),
-                                         CHF_BOX(this_flux_cc.box()),
-                                         CHF_CONST_REALVECT(vel_dx),
-                                         CHF_CONST_REAL(a_ma),
-                                         CHF_CONST_REAL(a_mb));
+      if (m_charge_a > 0) {                                   
+         //Add energy-diffusion part of the TP collisions
+         FORT_EVALUATE_TP_ENERG_DIFF_UNLIKE(CHF_FRA(this_flux_cc),
+                                          CHF_CONST_FRA1(this_delta_dfn,0),
+                                          CHF_CONST_FRA1(this_b,0),
+                                          CHF_CONST_FRA1(this_temperature,0),
+                                          CHF_BOX(this_flux_cc.box()),
+                                          CHF_CONST_REALVECT(vel_dx),
+                                          CHF_CONST_REAL(a_ma),
+                                          CHF_CONST_REAL(a_mb));
+      }
    }
 
    //Calculate collision flux cell-average
@@ -274,7 +280,20 @@ void LinearizedUnlike::testPartCollRHS(LevelData<FArrayBox>& a_rhs_coll,
       const PhaseBlockCoordSys& block_coord_sys = phase_geom.getBlockCoordSys(grids[dit]);
       double fac = 1. / block_coord_sys.getMappedCellVolume();
       a_rhs_coll[dit].mult(fac);
-      
+
+      if (m_charge_a < 0) {
+         FORT_ADD_ION_FRICTION(CHF_BOX(a_rhs_coll[dit].box()),
+                              CHF_FRA1(a_rhs_coll[dit],0),
+                              CHF_CONST_FRA1(m_Ta_inj[dit],0),
+                              CHF_CONST_FRA1(m_Tb_inj[dit],0),
+                              CHF_CONST_FRA1(m_Vb_inj[dit],0),
+                              CHF_CONST_FRA1(m_F0a[dit],0),
+                              CHF_CONST_REAL(a_ma),
+                              CHF_CONST_REAL(a_mb),
+                              CHF_CONST_FRA1(injected_B[dit],0),
+                              CHF_CONST_REALVECT(vel_dx));
+      }
+      // Scale by collision frequency normalizing factor
       FORT_CLS_FREQ_SCALE(CHF_BOX(a_rhs_coll[dit].box()),
                           CHF_FRA1(a_rhs_coll[dit],0),
                           CHF_CONST_FRA1(a_Nb_inj[dit],0),
@@ -471,8 +490,10 @@ void LinearizedUnlike::computeRandQTerms(LevelData<FArrayBox>&       a_R,
 void LinearizedUnlike::computeMaxwellianFit(LevelData<FArrayBox>&             a_F0,
                                             CFG::LevelData<CFG::FArrayBox>&   a_temperature,
                                             CFG::LevelData<CFG::FArrayBox>&   a_density,
+                                            CFG::LevelData<CFG::FArrayBox>&   a_velocity,
                                             LevelData<FArrayBox>&             a_temperature_inj,
-                                            LevelData<FArrayBox>&             a_density_inj,
+                                            LevelData<FArrayBox>&             a_density_inj,                                         
+                                            LevelData<FArrayBox>&             a_velocity_inj,
                                             const KineticSpecies&             a_species,
                                             const LevelData<FArrayBox>&       a_dfn,
                                             const Real                        a_time) const
@@ -491,6 +512,7 @@ void LinearizedUnlike::computeMaxwellianFit(LevelData<FArrayBox>&             a_
     
     for (CFG::DataIterator dit(a_density.dataIterator()); dit.ok(); ++dit) {
       ParallelMom[dit].divide(a_density[dit]);
+      a_velocity[dit].copy(ParallelMom[dit]);
     }
 
     a_species.pressure(a_temperature, ParallelMom);
@@ -515,6 +537,7 @@ void LinearizedUnlike::computeMaxwellianFit(LevelData<FArrayBox>&             a_
     // Compute injected density and temperature
     phase_geom.injectConfigurationToPhase(a_temperature, a_temperature_inj);
     phase_geom.injectConfigurationToPhase(a_density, a_density_inj);
+    phase_geom.injectConfigurationToPhase(a_velocity, a_velocity_inj);
 }
 
 void LinearizedUnlike::getReferenceData(LevelData<FArrayBox>& a_F0,

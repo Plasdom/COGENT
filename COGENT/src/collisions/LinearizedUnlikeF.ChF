@@ -169,6 +169,58 @@ c     local variables
       end
 
 
+
+      subroutine add_ion_friction(
+     &     CHF_BOX[box],
+     &     CHF_FRA1[rhs],
+     &     CHF_CONST_FRA1[Ta],
+     &     CHF_CONST_FRA1[Tb],
+     &     CHF_CONST_FRA1[Vb],
+     &     CHF_CONST_FRA1[FMa],
+     &     CHF_CONST_REAL[ma],
+     &     CHF_CONST_REAL[mb],
+     &     CHF_CONST_FRA1[bmag],
+     &     CHF_CONST_REALVECT[dx]
+     &     )
+
+c     local variables
+      integer CHF_DDECL[i;j;k;l;m]
+      double precision nu_D, b, vth, x, vpar, fp_term, vth_b, xb, NuD
+
+      CHF_MULTIDO[box;i;j;k;l;m]
+
+#if CH_SPACEDIM==5
+
+#else
+
+        b = bmag(i,j,CHF_LBOUND[bmag;2],CHF_LBOUND[bmag;3])
+        vth_b=sqrt(2.0*Tb(i,j,CHF_LBOUND[Tb;2],CHF_LBOUND[Tb;3])/mb)
+        xb=sqrt((k+0.5)*(k+0.5)*dx(0)*dx(0)+(l+0.5)*dx(1)*b/ma)/vth_b
+
+        nu_D = (NuD(xb) / vth_b**3) * (sqrt(2.0/ma))**3
+
+c        b = bmag(i,j,CHF_LBOUND[bmag;2],CHF_LBOUND[bmag;3])
+c        vth=sqrt(2.0*Ta(i,j,CHF_LBOUND[Ta;2],CHF_LBOUND[Ta;3])/ma)
+c        x=sqrt((k+0.5)*(k+0.5)*dx(0)*dx(0)+(l+0.5)*dx(1)*b/ma)/vth
+
+c        nu_D = (1.0 / vth**3 / x**3) * (sqrt(2.0/ma))**3
+#endif
+
+
+#if CH_SPACEDIM==5
+
+#else
+       vpar = (k+0.5)*dx(0)
+       fp_term = nu_D * ma * vpar * Vb(i,j,CHF_LBOUND[Vb;2],CHF_LBOUND[Vb;3]) * FMa(CHF_IX[i;j;k;l]) / Ta(i,j,CHF_LBOUND[Ta;2],CHF_LBOUND[Ta;3])
+       rhs(CHF_IX[i;j;k;l]) = rhs(CHF_IX[i;j;k;l]) + fp_term
+#endif
+     
+      CHF_ENDDO
+
+      return
+      end
+
+
       subroutine mult_mvpar(
      &     CHF_BOX[gridbox],
      &     CHF_FRA1[result],

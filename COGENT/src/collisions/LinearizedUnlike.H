@@ -119,10 +119,12 @@ private:
    void computeMaxwellianFit(LevelData<FArrayBox>&             F0,
                              CFG::LevelData<CFG::FArrayBox>&   temperature,
                              CFG::LevelData<CFG::FArrayBox>&   density,
-			     LevelData<FArrayBox>&             temperature_inj,
+                             CFG::LevelData<CFG::FArrayBox>&   velocity,
+                  			     LevelData<FArrayBox>&             temperature_inj,
                              LevelData<FArrayBox>&             density_inj,
-			     const KineticSpecies&             species,
-			     const LevelData<FArrayBox>&       dfn,
+                             LevelData<FArrayBox>&             velocity_inj,
+                  			     const KineticSpecies&             species,
+                  			     const LevelData<FArrayBox>&       dfn,
                              const Real                        time) const;
 
    /// Assign Maxwellian background profile data, when it is specified from input
@@ -239,10 +241,14 @@ private:
    CFG::LevelData<CFG::FArrayBox> m_Tb;
    CFG::LevelData<CFG::FArrayBox> m_Na;
    CFG::LevelData<CFG::FArrayBox> m_Nb;
+   CFG::LevelData<CFG::FArrayBox> m_Va;
+   CFG::LevelData<CFG::FArrayBox> m_Vb;
    LevelData<FArrayBox> m_Ta_inj;
    LevelData<FArrayBox> m_Tb_inj;
    LevelData<FArrayBox> m_Na_inj;
    LevelData<FArrayBox> m_Nb_inj;
+   LevelData<FArrayBox> m_Va_inj;
+   LevelData<FArrayBox> m_Vb_inj;
    LevelData<FArrayBox> m_cls_norm;
    
    MomentOp& m_moment_op;
