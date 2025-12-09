@@ -602,12 +602,22 @@ void LinearizedUnlike::getClsFreqNorm(LevelData<FArrayBox>&             a_cls_no
        CFG::BoxIterator bit(cls_norm_cfg[dit].box());
        for (bit.begin(); bit.ok(); ++bit) {
          CFG::IntVect iv = bit();
-         double fac1 = abs(m_charge_a) * abs(m_charge_b) * (m_mass_a + m_mass_b) /
-                           (m_mass_a * a_Tb[dit](iv,0) + m_mass_b * a_Ta[dit](iv,0));
-         double fac2 = sqrt(a_Na[dit](iv,0)/a_Ta[dit](iv,0)*pow(m_charge_a,2) +
-                            a_Nb[dit](iv,0)/a_Tb[dit](iv,0)*pow(m_charge_b,2));
-          
-         double Coulomb_Lg = 23 - log( fac1 * fac2 * sqrt(N)/1000.0 / pow(T, 3.0/2.0) );
+         
+         double Coulomb_Lg;
+         if ((m_charge_a == -1) && (m_Ta[dit](iv,0) * T < (10.0 * pow(m_charge_b,2))))
+         {
+            double fac1 = sqrt(a_Na[dit](iv,0)) / m_Ta[dit](iv,0);
+            Coulomb_Lg = 24 - log( fac1 * sqrt(N)/1000.0 / T );
+         }
+         else 
+         {
+            double fac1 = abs(m_charge_a) * abs(m_charge_b) * (m_mass_a + m_mass_b) /
+                              (m_mass_a * a_Tb[dit](iv,0) + m_mass_b * a_Ta[dit](iv,0));
+            double fac2 = sqrt(a_Na[dit](iv,0)/a_Ta[dit](iv,0)*pow(m_charge_a,2) +
+                              a_Nb[dit](iv,0)/a_Tb[dit](iv,0)*pow(m_charge_b,2));
+            
+            Coulomb_Lg = 23 - log( fac1 * fac2 * sqrt(N)/1000.0 / pow(T, 3.0/2.0) );
+         }
          cls_norm_cfg[dit](iv,0) = coeff * N * pow(ech, 2) * pow(m_charge_a, 2) * pow(m_charge_b, 2) * L
                                  / ( pow(T, 2)) * Coulomb_Lg;
        }
