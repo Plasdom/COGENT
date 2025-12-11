@@ -459,8 +459,11 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
       for (bit.begin(); bit.ok(); ++bit) {
          CFG::IntVect iv = bit();
          T_iz = 0.5 * m_Te_cfg[dit](iv,0) * T_norm - E_iz / 3.0;
-         if (T_iz < T_iz_floor){
-            T_iz = T_iz_floor;
+         // if (T_iz < T_iz_floor){
+         //    T_iz = T_iz_floor;
+         // }
+         if (m_Te_cfg[dit](iv,0) * T_norm < (2/3) * E_iz){
+            T_iz = 0.5 * m_Te_cfg[dit](iv,0) * T_norm;
          }
          m_iz_source_temperature_cfg[dit](iv,0) = T_iz / T_norm;
       }
