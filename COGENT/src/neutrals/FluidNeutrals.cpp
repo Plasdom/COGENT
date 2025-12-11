@@ -462,7 +462,7 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
          if (T_iz < T_iz_floor){
             T_iz = T_iz_floor;
          }
-         m_iz_source_temperature_cfg[dit](iv,0) = T_iz;
+         m_iz_source_temperature_cfg[dit](iv,0) = T_iz / T_norm;
       }
 
       // m_iz_source_temperature_cfg[dit].copy(T_iz);
