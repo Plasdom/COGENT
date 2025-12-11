@@ -94,6 +94,7 @@ private:
    LevelData<FArrayBox> m_ni_inj;
    LevelData<FArrayBox> m_ne_inj;
    double E_iz = 13.6;
+   double T_iz_floor = 3.0;
 
    bool m_first_call_tscale;
    

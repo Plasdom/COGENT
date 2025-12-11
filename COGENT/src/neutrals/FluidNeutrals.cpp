@@ -453,10 +453,24 @@ void FluidNeutrals::updateIzSourceDfn(const KineticSpecies&  a_species)
    (a_species).temperature(m_Te_cfg);
    // (a_species).numberDensity(m_electron_density_cfg);
    for (CFG::DataIterator dit(mag_geom.grids()); dit.ok(); ++dit) {
-      m_iz_source_temperature_cfg[dit].copy(m_Te_cfg[dit]);
-      m_iz_source_temperature_cfg[dit].divide(2.0);
-      m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
+
+      double T_iz;
+      CFG::BoxIterator bit(m_Te_cfg[dit].box());
+      for (bit.begin(); bit.ok(); ++bit) {
+         CFG::IntVect iv = bit();
+         T_iz = 0.5 * m_Te_cfg[dit](iv,0) * T_norm - E_iz / 3.0;
+         if (T_iz < T_iz_floor){
+            T_iz = T_iz_floor;
+         }
+         m_iz_source_temperature_cfg[dit](iv,0) = T_iz;
+      }
+
+      // m_iz_source_temperature_cfg[dit].copy(T_iz);
+      // m_iz_source_temperature_cfg[dit].divide(2.0);
+      // m_iz_source_temperature_cfg[dit].plus(-(E_iz/3.0)/T_norm);
+
    }
+
    MaxwellianKernel<FArrayBox> maxwellian(m_iz_source_density_cfg, m_iz_source_temperature_cfg, iz_source_velocity_cfg);
    maxwellian.eval(m_iz_source_maxw,a_species);
 
