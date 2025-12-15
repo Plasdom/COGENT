@@ -604,6 +604,7 @@ void LinearizedUnlike::getClsFreqNorm(LevelData<FArrayBox>&             a_cls_no
          CFG::IntVect iv = bit();
          
          double Coulomb_Lg;
+         // double loc_T_ev = m_Ta[dit](iv,0) * T; 
          if ((m_charge_a == -1) && (m_Ta[dit](iv,0) * T < (10.0 * pow(m_charge_b,2))))
          {
             double fac1 = sqrt(a_Na[dit](iv,0)) / m_Ta[dit](iv,0);

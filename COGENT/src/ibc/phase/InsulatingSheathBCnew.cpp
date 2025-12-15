@@ -15,7 +15,6 @@
 #include "SpaceUtils.H.multidim"
 #include "SpaceUtilsF_F.H"
 
-
 #undef CH_SPACEDIM
 #include "ReductionOps.H.multidim"
 #include "ReductionCopier.H.multidim"
@@ -78,7 +77,7 @@ InsulatingSheathBC_new::InsulatingSheathBC_new( const BoundaryBoxLayoutPtr&  a_b
 
 : m_bdry_layout(a_bdry_layout),
   m_compute_potential_BC(false),
-  m_sheath_bc_type("second_order"),
+  m_sheath_bc_type("lsbc"), // permanently change from order to "lsbc", "reflection" and "absorption"
   m_debug(false),
   m_tolerance(1.0e-12),
   m_advect_scheme("uw1"),
@@ -992,12 +991,22 @@ void InsulatingSheathBC_new::applyBC( KineticSpeciesPtrVect& a_species,
    
    const double mass = species_physical.mass();
    const double charge = species_physical.charge();
+   Real phi_mult;
    ////// if (charge>0) {return;} TMP FIX to set fully reflective BC
-   if (charge>0) { return;
-     Real pp[2] = {0.0, 0.0}; // this does not matter, as the following method will ignore pp and a_phi anyway
-     applyBC_iter(pp, a_species, 0, a_velocity, a_phi);
-     return;
+   if (charge>0 && m_sheath_bc_type=="lsbc") {
+      return; // We are going to implement ions in electron lsbc
+    }
+   if (m_sheath_bc_type=="absorption") {
+     phi_mult = 0.0; // means the potentail = 0, so the boundary absorbs everything
    }
+   else if (m_sheath_bc_type=="reflection") {
+     phi_mult = 1.0; // means the potentail is max, so the boudary reflects everything
+   }
+    
+     ///return; // We are going to implement ions in electron lsbc
+     ///Real pp[2] = {0.0, 0.0}; // this does not matter, as the following method will ignore pp and a_phi anyway
+     ///applyBC_iter(pp, a_species, 0, a_velocity, a_phi);
+     ///return;
    
    
    const PhaseGeom& geometry( species_physical.phaseSpaceGeometry() );
@@ -1020,14 +1029,35 @@ void InsulatingSheathBC_new::applyBC( KineticSpeciesPtrVect& a_species,
    Real phi_MAX = phi_hi;
    Real phi_lo = 0.0;
    Real d_phi = (phi_hi-phi_lo)/1000; // Define a small d_phi like 1/1000
-
+   // p_res is the array to sent to applyBC_iter that will get the species current [0] and send the potential [1]
+   // We provide p_res[1] and get p_res[0]
+   Real p_res[2];
+   
+   // Do absorption and reflection only once since we know the value of reflecting potentail
+   if (m_sheath_bc_type!="lsbc") {
+     Real phi_tmp = phi_MAX*phi_mult;
+     p_res[0] = 0;
+     p_res[1] = phi_tmp;
+     applyBC_iter(p_res, a_species, a_species_index, a_velocity, a_phi);
+     return;
+   }
+   
+   // Continue here for LSBC assuming that the only ion species has index 0!!!
+   // All the LSBC implementation will FAIL otherwise.
+   // In fact, we need to do all species with positive charge here, then compute their total boundary flux
+   // And then do electrons. This should be done later. Now, we assume ions are species "0", and electrons are species "1"
+   
+   p_res[1] = 0.0; // Set zero potential for ions
+   applyBC_iter(p_res, a_species, 0, a_velocity, a_phi);
+   // We have p_res[0] now that is the ion flux
    
    // Total boundary currents I_i - ion, I_e - electron, I_s - sum of the two
    // Currently implemented for two species plasmas only
    Real I_i, I_e, I_s;
+   I_i = p_res[0]; // Get ion boudary current (or flux)
    // p_res is the array to sent to applyBC_iter that will get the species current [0] and send the potential [1]
-   Real p_res[2];
-   p_res[0] = 0; p_res[1] = (phi_hi+phi_lo)/2;
+   //Real p_res[2];
+   //p_res[0] = 0; p_res[1] = (phi_hi+phi_lo)/2;
    Real phi_prev;
    // Check number of iterations
    int iters = m_iter_number;
@@ -1039,8 +1069,9 @@ void InsulatingSheathBC_new::applyBC( KineticSpeciesPtrVect& a_species,
    //////if (true)
    {
      // Apply for ions and get the ion current
-     applyBC_iter(p_res, a_species, 0, a_velocity, a_phi);
-     I_i = p_res[0];
+     //applyBC_iter(p_res, a_species, 0, a_velocity, a_phi);
+     //I_i = p_res[0];
+     p_res[1] = (phi_hi+phi_lo)/2;
    
      for (int i=0; i<m_iter_number; i++){
        applyBC_iter(p_res, a_species, 1, a_velocity, a_phi);
@@ -1075,8 +1106,8 @@ void InsulatingSheathBC_new::applyBC( KineticSpeciesPtrVect& a_species,
      phi_prev = phi_0;
             
      // Apply for ions
-     applyBC_iter(p_res, a_species, 0, a_velocity, a_phi);
-     I_i = p_res[0];
+     //applyBC_iter(p_res, a_species, 0, a_velocity, a_phi);
+     //I_i = p_res[0];
      // Apply for electrons
      applyBC_iter(p_res, a_species, 1, a_velocity, a_phi);
      I_e = p_res[0];
@@ -1422,7 +1453,8 @@ void InsulatingSheathBC_new::applyBC_iter( Real* p_res,
    ///geometry.injectConfigurationToPhase(a_phi, phi_injected);
    
    Real phi_val = p_res[1];
-   if (charge>0) {phi_val=0.0;}//////  TMP change to set fully reflective ion BC
+   //// Comment this for now, since Q=0 case is processed for reflection and absrption individually
+   //// if (charge>0) {phi_val=0.0;}//////  TMP change to set fully reflective ion BC
    //////if (charge>0) {phi_val=10000000000.0; charge*=-1;}
    
    DataIterator dit_inj = m_phi_injected.dataIterator();
@@ -1656,6 +1688,15 @@ InsulatingSheathBC_new::parseParameters(const ParmParse& a_pp)
    a_pp.query("tolerance", m_tolerance);
    a_pp.query("debug", m_debug);
    a_pp.query("newton_solver", m_newton);
+   
+   // Check input validity
+   if (m_sheath_bc_type!="lsbc" && m_sheath_bc_type!="absorption" && m_sheath_bc_type!="reflection") {
+     MayDay::Error( "No sheath_bc_type specified in the BC class!" );
+   }
+   if (m_advect_scheme!="uw1" && m_advect_scheme!="uw3" && m_advect_scheme!="uw5" && m_advect_scheme!="weno") {
+     MayDay::Error( "No advection_scheme specified in the BC class!" );
+   }
+     
 
 }
 

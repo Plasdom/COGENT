@@ -12,7 +12,33 @@
 
 /// Logical BC class
 /**
- * A utility class for performing operation with logical sheath BCs.
+ * Under "insulating_sheath_new", there are three options: "lsbc", "absorption", and "reflection".
+ * "absorption" implies that there is zero ingoing flux on the boundary for every incoming velocity.
+ * In this case, the ghost cells are filled with some values (not necessary zeros) to ensure that PDF on the boudary
+ * faces is zero.
+ * "reflection" is the opposite of "absorption", so that for every face value of the outgoing PDF there is a reflected
+ * face value of the ingoing PDF: f_face[-v] = f_face[+v]. The ghost cells are filled to ensure this condition.
+ * "lsbc" stands for the Logical Sheath Boudary Condition, where absorption BC is applied for the ions, and the electron
+ * total boundary flux is equal to ion total boundary flux.
+ *
+ * Since BC types for every species are set individually in the input file, there might be some poorly bahaving scenarios.
+ * Here, we lisred all possible combinations and the resulting behavior, with L, A, and R standing for lsbc, absorption, and reflection,
+ * and the first letter standing for ions, the second for electrons.
+ *
+ * >> LL - Ion BC does nothing and relies on electron lsbc to be called. Ion absorption BC is implemented there.
+ *         Electron lsbc is then executed.
+ * >> LA - Ion BC does nothing and relies on electron lsbc to be called. Ion BC is NEVER called, causing unexpected behavior.
+ *         Electron absorption BC is then executed.
+ * >> LR - Ion BC does nothing and relies on electron lsbc to be called. Ion BC is NEVER called, causing unexpected behavior.
+ *         Electron reflection BC is then executed.
+ * >> AL - Ion absorption BC is called. Electron lsbc is called and performs ion absorption BC once again wasting resoures.
+ * >> AA - Ion absorption BC is called. Electron absorption BC is called.
+ * >> AR - Ion absorption BC is called. Electron reflection BC is called.
+ * >> RL - Ion reflection BC is called. Electron lsbc is called and overwrites ion reflection BC to absorption one.
+ * >> RA - Ion reflection BC is called. Electron absorption BC is called.
+ * >> RR - Ion reflection BC is called. Electron reflection BC is called.
+ *
+ * As follows from the description above, LA, LR, AL, and RL combinations should be avoided in the input file.
  */
 class InsulatingSheathBC_new
 {
