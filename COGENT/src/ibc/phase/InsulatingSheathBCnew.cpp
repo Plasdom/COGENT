@@ -1000,7 +1000,7 @@ void InsulatingSheathBC_new::applyBC( KineticSpeciesPtrVect& a_species,
      phi_mult = 0.0; // means the potentail = 0, so the boundary absorbs everything
    }
    else if (m_sheath_bc_type=="reflection") {
-     phi_mult = 1.0; // means the potentail is max, so the boudary reflects everything
+     phi_mult = -charge * 1.0; // means the potentail is max, so the boudary reflects everything
    }
     
      ///return; // We are going to implement ions in electron lsbc
