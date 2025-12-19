@@ -137,7 +137,7 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    if ( !m_rhs_tmp.isDefined()) m_rhs_tmp.define( grids, 1, IntVect::Zero );
 
    // Compute CTP_ab[Fa0b,F0b] and add to RHS
-   if (m_include_bkgr_cls && m_charge_a > 0) {
+   if (m_include_bkgr_cls) {
      testPartCollRHS(m_rhs_tmp, m_F0a, m_Nb_inj, m_Tb_inj, soln_species_a, m_mass_a, m_mass_b);
      for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
        rhs_dfn[dit].plus(m_rhs_tmp[dit]);
@@ -145,11 +145,12 @@ void LinearizedUnlike::evalClsRHS(KineticSpeciesPtrVect&       a_rhs,
    }
    
    // Compute CTP_ab[delta_fa,F0b] and add to RHS
-   testPartCollRHS(m_rhs_tmp, m_delta_dfn_a, m_Nb_inj, m_Tb_inj, soln_species_a, m_mass_a, m_mass_b);
-   for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
-      rhs_dfn[dit].plus(m_rhs_tmp[dit]);
+   if (m_charge_a < 0) {  
+     testPartCollRHS(m_rhs_tmp, m_delta_dfn_a, m_Nb_inj, m_Tb_inj, soln_species_a, m_mass_a, m_mass_b);
+     for (DataIterator dit( grids.dataIterator() ); dit.ok(); ++dit) {
+       rhs_dfn[dit].plus(m_rhs_tmp[dit]);
+     }
    }
-
 
  #if 0  
    // Compute CFP_ab and add to RHS
