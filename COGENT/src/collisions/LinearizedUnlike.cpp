@@ -232,7 +232,7 @@ void LinearizedUnlike::testPartCollRHS(LevelData<FArrayBox>& a_rhs_coll,
                                       CHF_CONST_REALVECT(vel_dx),
                                       CHF_CONST_REAL(a_ma),
                                       CHF_CONST_REAL(a_mb));
-      if (m_charge_a > 0) {                                   
+      // if (m_charge_a > 0) {                                   
          //Add energy-diffusion part of the TP collisions
          FORT_EVALUATE_TP_ENERG_DIFF_UNLIKE(CHF_FRA(this_flux_cc),
                                           CHF_CONST_FRA1(this_delta_dfn,0),
@@ -242,7 +242,7 @@ void LinearizedUnlike::testPartCollRHS(LevelData<FArrayBox>& a_rhs_coll,
                                           CHF_CONST_REALVECT(vel_dx),
                                           CHF_CONST_REAL(a_ma),
                                           CHF_CONST_REAL(a_mb));
-      }
+      // }
    }
 
    //Calculate collision flux cell-average
