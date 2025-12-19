@@ -2,6 +2,7 @@
 #define _SLABBLOCKCOORDSYS_H_
 
 #include "MagBlockCoordSys.H"
+#include "RadialUtils.H"
 
 #include "NamespaceHeader.H"
 
@@ -181,6 +182,9 @@ class SlabBlockCoordSys
       RealVect m_mapped_block_size;
 
       double m_mb_center;
+
+      bool m_use_mapping;
+      HermiteSpline m_mapping_spline;   /// Hermite spline representation for the parallel mapping
 };
 
 #include "NamespaceFooter.H"

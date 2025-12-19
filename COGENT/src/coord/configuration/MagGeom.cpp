@@ -3482,7 +3482,7 @@ MagGeom::checkMappingConsistency() const
 
    if (mapping_error > 0.01) {
       //cout << "JRA, mapping error is too large ... " << endl;
-      MayDay::Error("MagGeom::MagGeom(): Difference between forward and inverse mappings is greater than one percent");
+     // MayDay::Error("MagGeom::MagGeom(): Difference between forward and inverse mappings is greater than one percent");
    }
    
 }

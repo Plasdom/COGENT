@@ -71,6 +71,14 @@ SlabBlockCoordSys::SlabBlockCoordSys( ParmParse&               a_parm_parse,
    if (m_verbose) {
       printParameters();
    }
+
+   std::string filename;
+   m_use_mapping = false;
+   if (a_parm_parse.contains("mapping_data_file")) {
+     m_use_mapping = true;
+     a_parm_parse.get("mapping_data_file", filename);
+     fillDataBRadial(m_mapping_spline, filename);
+   }
 }
 
 
@@ -84,7 +92,14 @@ RealVect SlabBlockCoordSys::realCoord( const RealVect& a_xi ) const
    //Do the scaling
    x *= m_phys_block_size;
    x /= m_mapped_block_size;
- 
+
+   // Adding parallel mapping
+   if (m_use_mapping) {
+     double mapping[3];
+     m_mapping_spline.getValAt(mapping, a_xi[POLOIDAL_DIR]);
+     x[POLOIDAL_DIR] = mapping[0];
+   }
+   
 #if CFG_DIM ==3
    if (m_field_aligned) {
       double pitch = getPitch(x);
@@ -132,8 +147,13 @@ Real SlabBlockCoordSys::dXdXi( const RealVect& a_Xi,
   }
   else{
      value = m_phys_block_size[a_dirX]/m_mapped_block_size[a_dirX];
+  
+     if (a_dirX == POLOIDAL_DIR && m_use_mapping) {
+       double mapping[3];
+       m_mapping_spline.getValAt(mapping, a_Xi[POLOIDAL_DIR]);
+       value = mapping[1];
+     }
   }
-
 #if CFG_DIM ==3
    if (m_field_aligned) {
 
