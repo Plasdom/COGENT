@@ -9,10 +9,12 @@
 #include "KineticFunctionLibrary.H"
 #include "MaxwellianKineticFunctionF_F.H"
 #include "KineticFunctionUtils.H"
+#include "CollisionsF_F.H"
 #include "MomentOp.H"
 #include "ConstFact.H"
 #include "Kernels.H"
 #include "inspect.H"
+#include "GKDiagnostics.H"
 
 #include "NamespaceHeader.H" 
 
@@ -85,7 +87,17 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    phase_geom.injectConfigurationToPhase( neutral_density_cfg, neutral_density_inj);
    
    if (m_first_call) {
-      
+
+      if (m_include_line_radiation)
+      {
+         computeLineradClsFreq(soln_species, phase_geom, soln_dfn.getBoxes(), m_linerad_cls_freq);
+         // phase_geom.plot
+         // GKDiagnostics::GKDiagnostics dgn = GKDiagnostics::
+         // GKDiagnostics::plotPhaseVar(m_linerad_cls_freq, 
+         //                             phase_geom, 
+         //                             "linerad_cls_freq", 
+         //                             a_time );
+      }      
       double dens_norm, vel_norm, temp_norm;
       computeChxNormalization(m_ionization_norm, m_chx_norm, dens_norm, vel_norm, temp_norm, m_SI_input);
       
@@ -212,6 +224,14 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
          computeIonizationRHS( ionization_rhs,  m_neutral_dfn, neutral_density_inj );
       }
    }
+
+   //Calculate line radiation RHS
+   LevelData<FArrayBox> linerad_cls_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
+   if (m_include_line_radiation)
+   {
+      evalLineradClsRHS( linerad_cls_rhs,  *(a_soln[a_species]), neutral_density_inj, a_time);  
+      // evalLineradClsRHS( linerad_cls_rhs,  soln_species, a_time);  
+   }
    
    //Calculate charge-exchange RHS
    LevelData<FArrayBox> chx_rhs( soln_dfn.getBoxes(), soln_dfn.nComp(), IntVect::Zero );
@@ -290,6 +310,11 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
    //Multiply by J to convert to the computational space
    phase_geom.multJonValid(ionization_rhs);
    phase_geom.multJonValid(chx_rhs);
+   if (m_include_line_radiation){
+      //TODO: Find out why this is necessary, and why it isn't used in ConsDragDiff (or maybe it is?)
+      phase_geom.multJonValid(linerad_cls_rhs);
+   }
+   //TODO: Do we need to do this for linerad_cls_rhs too?
 
    //Add neutral-model RHS to the total RHS
    LevelData<FArrayBox>& rhs_dfn( a_rhs_species.distributionFunction() );
@@ -298,11 +323,218 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
        if (m_include_chx) {
           rhs_dfn[rdit].plus( chx_rhs[rdit] );
        }
+       if (m_include_line_radiation)
+       {
+         //  rhs_dfn[rdit].plus( linerad_cls_rhs[rdit] ); 
+       }
    }  
 
    m_first_call = false;
 }
 
+void FluidNeutrals::computeLineradClsFreq(const KineticSpecies&     a_soln_species,
+                                          const PhaseGeom&          a_phase_geom,
+                                          const DisjointBoxLayout&  a_grids,
+                                          LevelData<FArrayBox>&     a_cls_freq)
+{
+  
+  // define collision frequency
+  if (!m_linerad_cls_freq.isDefined()) m_linerad_cls_freq.define(a_grids, 1, IntVect::Zero);
+
+  // Define other constants used in calculating collision frequency
+  double ech = Constants::ELEMENTARY_CHARGE; 
+  double pi = Constants::PI;  
+  double mass = a_soln_species.mass();
+  double mass_real = mass * Constants::MASS_OF_PROTON;
+  double ni_norm = 1.0e19;
+  double C = (8 * ech) / ((pow(pi,0.5))*ni_norm) * pow(2*ech/mass_real,gamma/2.0);
+  double AbarC = Abar / C;
+
+  
+  // Compute normalisation constants
+  double m0, m_norm, v_norm, cls_norm, T_norm, B_norm, L;
+  ParmParse ppunits( "units" );
+  ppunits.get("mass",m0);
+  ppunits.get("temperature",T_norm);
+  ppunits.get("magnetic_field",B_norm);
+  ppunits.get("length",L);
+  m_norm = m0 * Constants::MASS_OF_PROTON;
+  v_norm = sqrt(Constants::ELEMENTARY_CHARGE * T_norm / m_norm);
+  cls_norm = L/v_norm;
+
+  // get injected magnetic field
+  const LevelData<FArrayBox>& inj_B = a_phase_geom.getBFieldMagnitude();
+  
+  // computeSelfConsistFreq(m_cls_freq, m_dens_inj, m_temp_inj, mass, charge);
+  const DisjointBoxLayout& grids = m_linerad_cls_freq.disjointBoxLayout();
+  DataIterator dit(grids.dataIterator());
+  const LevelData<FArrayBox>& B_injected( a_phase_geom.getBFieldMagnitude() );
+  for (dit.begin(); dit.ok(); ++dit) {
+
+    //TODO: Implement non-uniform velocity normalisation in same way as done in ConsDragDiff operator
+    FArrayBox& this_cls_freq = m_linerad_cls_freq[dit];
+    const FArrayBox& this_B = B_injected[dit];
+    const FArrayBox& this_velocity = a_phase_geom.getVelocityRealCoords()[dit];
+    FORT_COMPUTE_LINERAD_CLS_FREQ(CHF_BOX(this_cls_freq.box()),
+                                   CHF_FRA1(this_cls_freq,0),
+                                   CHF_CONST_FRA(this_velocity),
+                                   CHF_CONST_FRA1(this_B,0),
+                                   CHF_CONST_REAL(v_norm),
+                                   CHF_CONST_REAL(mass),
+                                   CHF_CONST_REAL(mass_real),
+                                   CHF_CONST_REAL(ech),
+                                   CHF_CONST_REAL(AbarC),
+                                   CHF_CONST_REAL(alpha),
+                                   CHF_CONST_REAL(beta),
+                                   CHF_CONST_REAL(gamma),
+                                   CHF_CONST_REAL(V0));
+
+    this_cls_freq.mult(cls_norm);
+
+  }
+  
+}
+
+void FluidNeutrals::evalLineradClsRHS( LevelData<FArrayBox>&         a_rhs,
+                                       KineticSpecies&         a_soln_species,
+                                       const LevelData<FArrayBox>& a_neutral_density,
+                                       const Real                    a_time )
+{
+  /*
+    Evaluates a model collision operator for the cumulative effect of inelastic  
+    excitation/de-excitation collisions between electrons and an atomic ion species 
+    The model operator is (J. Roeltgen et al., Nuclear Fusion 65 (2025)):
+    df/dt_coll=div(flux_coll), where flux_coll = [coll_freq*v*f].
+    The implementation is based on the conservative drag-diffusion model operator, 
+    implemented in COGENT as "ConsDragDiff" and outlined in Justin's thesis (Chapter 4).
+  */
+
+  CH_TIME("FluidNeutrals::evalLineradClsRHS");
+  
+  // get vlasov RHS for the current species
+  LevelData<FArrayBox>& rhs_dfn = a_soln_species.distributionFunction();
+
+  // get solution distribution function (f*J*Bstarpar) for the current species
+  LevelData<FArrayBox>& soln_fBJ = a_soln_species.distributionFunction();
+  double mass = a_soln_species.mass();
+  double charge = a_soln_species.charge();
+
+  // get coordinate system parameters
+  const PhaseGeom& phase_geom = a_soln_species.phaseSpaceGeometry();
+  const CFG::MagGeom & mag_geom = phase_geom.magGeom();
+  const DisjointBoxLayout& dbl = soln_fBJ.getBoxes();
+  
+  // copy soln_fBJ so can perform exchange to ghost cells
+  // we need to do so because we pass here a computational dfn
+  // that does not have ghost cells filled
+  if (!m_fBJ_vel_ghost.isDefined()) {
+      IntVect velGhost = 2*IntVect::Unit;
+      for (int dir=0; dir<CFG_DIM; dir++) {
+         velGhost[dir] = 0;
+      }
+      m_fBJ_vel_ghost.define(dbl, 1, velGhost);
+  }
+
+  for (DataIterator dit(soln_fBJ.dataIterator()); dit.ok(); ++dit) {
+      m_fBJ_vel_ghost[dit].copy(soln_fBJ[dit], dbl[dit]);
+  }
+  //since we only need ghost information in velocity space only
+  // use simple exchange, instead of fillInternalGhosts
+  m_fBJ_vel_ghost.exchange();
+  
+  // compute the divergence of individual velocity space fluxes
+  // i.e., Psi quantities from Justin's thesis Chapter 4 (multiplied by J * nu)
+  if (!m_Jpsi_linerad.isDefined()) m_Jpsi_linerad.define(dbl, 1, IntVect::Zero);
+//   computeLineradVelFluxesDiv(a_rhs, m_fBJ_vel_ghost, phase_geom, mass);
+  computeLineradVelFluxesDiv(m_Jpsi_linerad, m_fBJ_vel_ghost, phase_geom, mass);
+
+  DataIterator cdit = a_rhs.dataIterator();
+  for (cdit.begin(); cdit.ok(); ++cdit)
+  {
+    const FArrayBox& this_Jpsi = m_Jpsi_linerad[cdit];
+    FORT_EVAL_LINERAD_RHS( CHF_BOX(a_rhs[cdit].box()),
+                           CHF_FRA1(a_rhs[cdit],0),
+                           CHF_CONST_FRA(this_Jpsi),
+                           CHF_CONST_FRA1(a_neutral_density[cdit],0));
+  }
+
+
+  // check conservation properties
+  if (m_first_call && m_linerad_diagnostics) {
+    linerad_diagnostics(a_rhs, a_soln_species, a_time);
+    exit(1);
+  }
+  
+  m_first_call = false;
+}
+
+void FluidNeutrals::computeLineradVelFluxesDiv(LevelData<FArrayBox>&        a_Jpsi,
+                                               LevelData<FArrayBox>&  a_fBJ,
+                                               const PhaseGeom&             a_phase_geom,
+                                               const double                 a_mass)
+{
+  /*This computes Jpsi divergence quantities.
+   See Justin's thesis Chapter 4*/
+  
+  // get injected magnetic field
+  const LevelData<FArrayBox>& inj_B = a_phase_geom.getBFieldMagnitude();
+  
+  // get injected cell-centered velocity spatial normalization
+  const int use_spatial_vel_norm = a_phase_geom.spatialVelNorm();
+  const LevelData<FArrayBox>& inj_vel_norm = a_phase_geom.getVelNorm();
+      
+  // get problem domain and number of vpar and mu cells
+  const ProblemDomain& phase_domain = a_phase_geom.domain();
+  const Box& domain_box = phase_domain.domainBox();
+  int num_vp_cells = domain_box.size(VPARALLEL_DIR);
+  int num_mu_cells = domain_box.size(MU_DIR);
+
+  // create the temporary fluxes needed to compute the conservative
+  // mean velocity and conservative temperature
+  const DisjointBoxLayout& dbl = a_fBJ.getBoxes();
+  if (!m_linerad_fluxes.isDefined())  m_linerad_fluxes.define(dbl, 1, IntVect::Zero);
+  DataIterator dit = m_linerad_fluxes.dataIterator();
+  for (dit.begin(); dit.ok(); ++dit)
+  {
+    // get phase space dx
+    const PhaseBlockCoordSys& block_coord_sys = a_phase_geom.getBlockCoordSys(dbl[dit]);
+    const RealVect& phase_dx =  block_coord_sys.dx();
+    
+    const FArrayBox& nu_on_patch = m_linerad_cls_freq[dit];
+    const FArrayBox& fBJnu_on_patch = a_fBJ[dit].mult(nu_on_patch);
+    const FArrayBox& B_on_patch   = inj_B[dit];
+        
+    const FArrayBox* this_velnormptr;
+
+   //  // Create a dummy to be used in Fortran if no velocity normalization
+   //  FArrayBox dummy(B_on_patch.box(),2);
+        
+    for (int dir=0; dir<SpaceDim; dir++)
+    {
+      // we can use second_order = true to have consistency between
+      // the PC and the collisional operator
+       
+      int is_second_order = (m_second_order_linerad_cls) ? 1 : 0;
+
+      FORT_EVAL_LINERAD_FLUX(CHF_BOX(m_linerad_fluxes[dit][dir].box()),
+                             CHF_FRA(m_linerad_fluxes[dit][dir]),
+                             CHF_CONST_FRA1(fBJnu_on_patch,0),
+                             CHF_CONST_FRA1(B_on_patch,0),
+                             CHF_CONST_REAL(a_mass),
+                             CHF_CONST_REALVECT(phase_dx),
+                             CHF_CONST_INT(dir),
+                             CHF_CONST_INT(num_vp_cells),
+                             CHF_CONST_INT(num_mu_cells),
+                             CHF_CONST_INT(is_second_order),
+                             CHF_CONST_INT(use_spatial_vel_norm));
+
+    }
+  }
+
+  // compute the divergence of the velocity space fluxes
+  a_phase_geom.mappedGridDivergenceFromFluxNormals(a_Jpsi, m_linerad_fluxes);
+  
+}
 
 void FluidNeutrals::computeIonizationRHS(LevelData<FArrayBox>& a_rhs,
                                          const LevelData<FArrayBox>& a_soln_dfn,
@@ -633,6 +865,30 @@ void FluidNeutrals::parseParameters( ParmParse& a_ppntr )
       m_include_iz_energy_loss = false;
    }
 
+   if (a_ppntr.contains("include_line_radiation")) {
+      a_ppntr.get( "include_line_radiation", m_include_line_radiation );
+   }
+   else 
+   {
+      m_include_line_radiation = false;
+   }
+
+   if (a_ppntr.contains("second_order_linerad_cls")) {
+      a_ppntr.get( "second_order_linerad_cls", m_second_order_linerad_cls );
+   }
+   else 
+   {
+      m_second_order_linerad_cls = false;
+   }
+
+   if (a_ppntr.contains("line_radiation_diagnostics")) {
+      a_ppntr.get( "line_radiation_diagnostics", m_linerad_diagnostics );
+   }
+   else 
+   {
+      m_linerad_diagnostics = false;
+   }
+
    // KineticFunctionLibrary* library = KineticFunctionLibrary::getInstance();
    // std::string function_name;
   
@@ -749,6 +1005,37 @@ void FluidNeutrals::diagnostics(const LevelData<FArrayBox>& a_rhs,
   a_rhs_species.parallelParticleFlux( parMom_src );
   phase_geom.plotConfigurationData( "parMom_src", parMom_src, a_time );
 
+}
+
+void FluidNeutrals::linerad_diagnostics(const LevelData<FArrayBox>& a_rhs,
+                               const KineticSpecies&       a_rhs_species,
+                               const double                a_time) const
+{
+  //Get geometry
+  const PhaseGeom& phase_geom = a_rhs_species.phaseSpaceGeometry();
+  const CFG::MagGeom& mag_geom( phase_geom.magGeom() );
+
+  //Get moment operator
+  MomentOp& moment_op = MomentOp::instance();
+  
+  //Plot particle source
+  CFG::LevelData<CFG::FArrayBox> particle_src( mag_geom.grids(), 1, CFG::IntVect::Zero );
+  moment_op.compute(particle_src, a_rhs_species, a_rhs, DensityKernel<FArrayBox>());
+  phase_geom.plotConfigurationData( "plt_linerad_particle_src_plots/linerad_particle_src0000.", particle_src, a_time );
+  
+  //Plot parallel momentum source
+  CFG::LevelData<CFG::FArrayBox> parMom_src( mag_geom.grids(), 1, CFG::IntVect::Zero );
+  moment_op.compute(parMom_src, a_rhs_species, a_rhs, ParallelVelKernel<FArrayBox>());
+  phase_geom.plotConfigurationData( "plt_linerad_parmom_src_plots/linerad_parmom_src0000.", parMom_src, a_time );
+  
+  //Plot energy source
+  CFG::LevelData<CFG::FArrayBox> energy_src( mag_geom.grids(), 1, CFG::IntVect::Zero );
+  moment_op.compute(energy_src, a_rhs_species, a_rhs, KineticEnergyKernel<FArrayBox>());
+  phase_geom.plotConfigurationData( "plt_linerad_energy_src_plots/linerad_energy_src0000.", energy_src, a_time );
+
+  //Plot collision frequency
+  GKDiagnostics m_diagnostics_fg;
+  m_diagnostics_fg.plotPhaseVar(m_linerad_cls_freq, phase_geom, "plt_linerad_cls_freq_plots/linerad_cls_freq0000.", a_time);
 }
 
 #include "NamespaceFooter.H"

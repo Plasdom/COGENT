@@ -67,7 +67,7 @@ private:
 
    int m_verbosity;
 
-   bool m_include_chx, m_chx_model_friction, m_first_call, m_use_Te_in_rate_calculation, m_include_iz_energy_loss;
+   bool m_include_chx, m_chx_model_friction, m_first_call, m_use_Te_in_rate_calculation, m_include_iz_energy_loss, m_include_line_radiation;
    bool m_SI_input;
    int electron_species_index;
 
@@ -93,10 +93,23 @@ private:
    LevelData<FArrayBox> m_neutral_maxw;
    LevelData<FArrayBox> m_ni_inj;
    LevelData<FArrayBox> m_ne_inj;
+   LevelData<FArrayBox> m_linerad_cls_freq;
+   LevelData<FArrayBox> m_fBJ_vel_ghost;
+   LevelData<FluxBox> m_linerad_fluxes;
+   LevelData<FArrayBox> m_Jpsi_linerad;
+   bool m_second_order_linerad_cls;
+   bool m_linerad_diagnostics;
    double E_iz = 13.6;
    double T_iz_floor = 3.0;
 
    bool m_first_call_tscale;
+
+   // Define the fit parameters for line radiation (TODO: Get these from the input file instead)
+   double Abar = 5.5949129e-32;
+   double alpha = 8.0000102e3;
+   double beta = 7.9587517e-1;
+   double gamma = -1.3919964e0;
+   double V0 = 3.5201735e0;
    
    /// Computes the ionization contribution to RHS.
    /*
@@ -111,6 +124,21 @@ private:
                               const LevelData<FArrayBox>& soln_dfn,
                               const LevelData<FArrayBox>& neutral_density) const;
    
+    /// Computes the line radiation as per J. Roeltgen et al., Nucl. Fus. 65 (2025)                    
+    void computeLineradClsFreq(const KineticSpecies&     soln_species,
+                        const PhaseGeom&          phase_geom,
+                        const DisjointBoxLayout&  grids,
+                        LevelData<FArrayBox>&     linerad_cls_freq);
+
+    void computeLineradVelFluxesDiv(LevelData<FArrayBox>&        Jpsi,
+                           LevelData<FArrayBox>&  fBJ,
+                           const PhaseGeom&             phase_geom,
+                           const double                 mass);   
+
+    virtual void evalLineradClsRHS( LevelData<FArrayBox>&  rhs,
+                                    KineticSpecies&        soln_species,
+                                    const LevelData<FArrayBox>& neutral_density,
+                                    const Real             time);
 
    /// Computes the charge-exchange contribution to RHS.
    /*
@@ -175,8 +203,11 @@ private:
     */
    void printParameters();
    
-   //Plots particle and parallel momentum sources
+   //Plots particle, parallel momentum and energy sources
    void diagnostics(const LevelData<FArrayBox>& a_rhs,
+		    const KineticSpecies&       a_rhs_species,
+		    const double                a_time) const;
+    void linerad_diagnostics(const LevelData<FArrayBox>& a_rhs,
 		    const KineticSpecies&       a_rhs_species,
 		    const double                a_time) const;
 
