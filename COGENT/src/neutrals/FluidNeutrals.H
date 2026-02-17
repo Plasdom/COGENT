@@ -94,6 +94,7 @@ private:
    LevelData<FArrayBox> m_ni_inj;
    LevelData<FArrayBox> m_ne_inj;
    LevelData<FArrayBox> m_linerad_cls_freq;
+   LevelData<FArrayBox> m_linerad_cls_freq_vel_ghost;
    LevelData<FArrayBox> m_fBJ_vel_ghost;
    LevelData<FluxBox> m_linerad_fluxes;
    LevelData<FArrayBox> m_Jpsi_linerad;
@@ -105,11 +106,24 @@ private:
    bool m_first_call_tscale;
 
    // Define the fit parameters for line radiation (TODO: Get these from the input file instead)
+  // H0
    double Abar = 5.5949129e-32;
    double alpha = 8.0000102e3;
    double beta = 7.9587517e-1;
    double gamma = -1.3919964e0;
    double V0 = 3.5201735e0;
+  // Ar8+
+  // double Abar = 5.8864840e-32;
+  // double alpha = 1.0739759e9;
+  // double beta = 1.4272764e0;
+  // double gamma = -1.5696360e0;
+  // double V0 = 1.7127784e1;
+  // // Li1+
+  // double Abar = 1.8391597e-32;
+  // double alpha = 1.5550315e4;
+  // double beta = 4.8963899e-1;
+  // double gamma = -1.4801717e0;
+  // double V0 = 7.7295814e0;
    
    /// Computes the ionization contribution to RHS.
    /*

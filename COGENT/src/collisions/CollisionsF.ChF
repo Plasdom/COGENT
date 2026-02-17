@@ -1191,7 +1191,8 @@ c    COMPONENT OF PSI IS NEEDED
       subroutine eval_linerad_rhs( CHF_BOX[box],
 &                                  CHF_FRA1[rhs_cls],
 &                                  CHF_CONST_FRA[Jpsi],
-&                                  CHF_CONST_FRA1[nn])
+&                                  CHF_CONST_FRA1[nn],
+&                                  CHF_CONST_REAL[dens_norm])
 
 c     local variables
       integer CHF_DDECL[i;j;k;l;m]
@@ -1199,9 +1200,9 @@ c     local variables
       CHF_MULTIDO[box;i;j;k;l;m]
 
 #if CH_SPACEDIM==5
-       rhs_cls(CHF_IX[i;j;k;l;m]) = nn(i,j,k,CHF_LBOUND[nn;3],CHF_LBOUND[nn;4]) * Jpsi(CHF_IX[i;j;k;l;m],0)
+       rhs_cls(CHF_IX[i;j;k;l;m]) = (dens_norm / 1.0d19) * nn(i,j,k,CHF_LBOUND[nn;3],CHF_LBOUND[nn;4]) * Jpsi(CHF_IX[i;j;k;l;m],0)
 #else
-       rhs_cls(CHF_IX[i;j;k;l]) = nn(i,j,CHF_LBOUND[nn;2],CHF_LBOUND[nn;3]) * Jpsi(CHF_IX[i;j;k;l],0)
+       rhs_cls(CHF_IX[i;j;k;l]) = (dens_norm / 1.0d19) * nn(i,j,CHF_LBOUND[nn;2],CHF_LBOUND[nn;3]) * Jpsi(CHF_IX[i;j;k;l],0)
 #endif
 
       CHF_ENDDO

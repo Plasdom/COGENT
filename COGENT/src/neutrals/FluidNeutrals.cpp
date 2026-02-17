@@ -314,7 +314,6 @@ void FluidNeutrals::evalNtrRHS(KineticSpecies&                   a_rhs_species,
       //TODO: Find out why this is necessary, and why it isn't used in ConsDragDiff (or maybe it is?)
       phase_geom.multJonValid(linerad_cls_rhs);
    }
-   //TODO: Do we need to do this for linerad_cls_rhs too?
 
    //Add neutral-model RHS to the total RHS
    LevelData<FArrayBox>& rhs_dfn( a_rhs_species.distributionFunction() );
@@ -392,6 +391,23 @@ void FluidNeutrals::computeLineradClsFreq(const KineticSpecies&     a_soln_speci
     this_cls_freq.mult(cls_norm);
 
   }
+
+  // copy linerad_cls_freq so can perform exchange to ghost cells
+  // we need to do so because the ghost cells are not filled by default
+  const DisjointBoxLayout& dbl = a_soln_species.distributionFunction().getBoxes();
+  if (!m_linerad_cls_freq_vel_ghost.isDefined()) {
+      IntVect velGhost = 2*IntVect::Unit;
+      for (int dir=0; dir<CFG_DIM; dir++) {
+         velGhost[dir] = 0;
+      }
+      m_linerad_cls_freq_vel_ghost.define(dbl, 1, velGhost);
+  }
+  for (DataIterator dit(m_linerad_cls_freq.dataIterator()); dit.ok(); ++dit) {
+      m_linerad_cls_freq_vel_ghost[dit].copy(m_linerad_cls_freq[dit], dbl[dit]);
+  }
+  //since we only need ghost information in velocity space only
+  // use simple exchange, instead of fillInternalGhosts
+  m_linerad_cls_freq_vel_ghost.exchange();
   
 }
 
@@ -423,6 +439,11 @@ void FluidNeutrals::evalLineradClsRHS( LevelData<FArrayBox>&         a_rhs,
   const PhaseGeom& phase_geom = a_soln_species.phaseSpaceGeometry();
   const CFG::MagGeom & mag_geom = phase_geom.magGeom();
   const DisjointBoxLayout& dbl = soln_fBJ.getBoxes();
+
+  // Get density normalisation to account for the fit being done at n=1e19
+  double dens_norm;
+  ParmParse ppunits( "units" );
+  ppunits.get("number_density",dens_norm);
   
   // copy soln_fBJ so can perform exchange to ghost cells
   // we need to do so because we pass here a computational dfn
@@ -451,11 +472,13 @@ void FluidNeutrals::evalLineradClsRHS( LevelData<FArrayBox>&         a_rhs,
   DataIterator cdit = a_rhs.dataIterator();
   for (cdit.begin(); cdit.ok(); ++cdit)
   {
+    //TODO: Neutral density should be normalised to 1e19 always here, which might be different from COGENT units
     const FArrayBox& this_Jpsi = m_Jpsi_linerad[cdit];
     FORT_EVAL_LINERAD_RHS( CHF_BOX(a_rhs[cdit].box()),
                            CHF_FRA1(a_rhs[cdit],0),
                            CHF_CONST_FRA(this_Jpsi),
-                           CHF_CONST_FRA1(a_neutral_density[cdit],0));
+                           CHF_CONST_FRA1(a_neutral_density[cdit],0),
+                           CHF_CONST_REAL(dens_norm));
   }
 
 
@@ -500,8 +523,10 @@ void FluidNeutrals::computeLineradVelFluxesDiv(LevelData<FArrayBox>&        a_Jp
     const PhaseBlockCoordSys& block_coord_sys = a_phase_geom.getBlockCoordSys(dbl[dit]);
     const RealVect& phase_dx =  block_coord_sys.dx();
     
-    const FArrayBox& nu_on_patch = m_linerad_cls_freq[dit];
+   //  const FArrayBox& nu_on_patch = m_linerad_cls_freq[dit];
+    const FArrayBox& nu_on_patch = m_linerad_cls_freq_vel_ghost[dit];
     const FArrayBox& fBJnu_on_patch = a_fBJ[dit].mult(nu_on_patch);
+   //  const FArrayBox& fBJnu_on_patch = a_fBJ[dit];
     const FArrayBox& B_on_patch   = inj_B[dit];
         
     const FArrayBox* this_velnormptr;
@@ -514,7 +539,8 @@ void FluidNeutrals::computeLineradVelFluxesDiv(LevelData<FArrayBox>&        a_Jp
       // we can use second_order = true to have consistency between
       // the PC and the collisional operator
        
-      int is_second_order = (m_second_order_linerad_cls) ? 1 : 0;
+      // int is_second_order = (m_second_order_linerad_cls) ? 1 : 0;
+      int is_second_order = 1;
 
       FORT_EVAL_LINERAD_FLUX(CHF_BOX(m_linerad_fluxes[dit][dir].box()),
                              CHF_FRA(m_linerad_fluxes[dit][dir]),
@@ -1035,7 +1061,10 @@ void FluidNeutrals::linerad_diagnostics(const LevelData<FArrayBox>& a_rhs,
 
   //Plot collision frequency
   GKDiagnostics m_diagnostics_fg;
-  m_diagnostics_fg.plotPhaseVar(m_linerad_cls_freq, phase_geom, "plt_linerad_cls_freq_plots/linerad_cls_freq0000.", a_time);
+  m_diagnostics_fg.plotPhaseVar(m_linerad_cls_freq_vel_ghost, phase_geom, "plt_linerad_cls_freq_plots/linerad_cls_freq0000.", a_time);
+
+  //Plot RHS
+  m_diagnostics_fg.plotPhaseVar(a_rhs, phase_geom, "plt_linerad_rhs_plots/linerad_rhs0000.", a_time);
 }
 
 #include "NamespaceFooter.H"
