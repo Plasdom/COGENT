@@ -1061,7 +1061,7 @@ void FluidNeutrals::linerad_diagnostics(const LevelData<FArrayBox>& a_rhs,
 
   //Plot collision frequency
   GKDiagnostics m_diagnostics_fg;
-  m_diagnostics_fg.plotPhaseVar(m_linerad_cls_freq_vel_ghost, phase_geom, "plt_linerad_cls_freq_plots/linerad_cls_freq0000.", a_time);
+  m_diagnostics_fg.plotPhaseVar(m_linerad_cls_freq, phase_geom, "plt_linerad_cls_freq_plots/linerad_cls_freq0000.", a_time);
 
   //Plot RHS
   m_diagnostics_fg.plotPhaseVar(a_rhs, phase_geom, "plt_linerad_rhs_plots/linerad_rhs0000.", a_time);
